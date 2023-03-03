@@ -1,11 +1,11 @@
-import math
 import torch
 import torch.nn as nn
-from torch.nn import Linear, BatchNorm1d
+from torch.nn import Linear, Conv2d, BatchNorm1d, BatchNorm2d, MaxPool2d
+import torch.nn.functional as F
 
 # Custom modules
-from Layers import Embedder, PositionalEncoder, Norm, EncoderLayer, DecoderLayer, get_clones
-from Layers import GraphConvolution, GC_Block
+from utils.custom_layers import Embedder, PositionalEncoder, Norm, EncoderLayer, DecoderLayer, get_clones
+from utils.custom_layers import GraphConvolution, GC_Block
 
 
 # Classification-------------------------------------------------------------------------------------------------------#
@@ -77,6 +77,40 @@ class Simple_GCN_Classifier(nn.Module):
         return y
 
 
+class CNN_Classifier(nn.Module):
+    def __init__(self, num_classes=12):
+        super(CNN_Classifier, self).__init__()
+        self.conv1 = Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding=1)
+        self.conv2 = Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
+        self.maxPool1 = MaxPool2d(kernel_size=2, stride=2)
+        self.batchNorm1 = BatchNorm2d(64)
+
+        self.conv3 = Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
+        self.maxPool2 = MaxPool2d(kernel_size=2, stride=2)
+        self.batchNorm2 = BatchNorm2d(128)
+
+        self.globalAvgPool = nn.AdaptiveAvgPool2d((1, 1))
+        self.dense1 = nn.Linear(128, 64)
+        self.dense2 = nn.Linear(64, num_classes)
+
+    def forward(self, inputs):
+        inputs = inputs.view(-1, 1, 57, 25)  # reshape input to [batch_size, channels, height, width]
+        x = F.relu(self.conv1(inputs))
+        x = F.relu(self.conv2(x))
+        x = self.maxPool1(x)
+        x = self.batchNorm1(x)
+        x = self.conv3(x)
+        x = self.maxPool2(x)
+        x = self.batchNorm2(x)
+        x = self.globalAvgPool(x)
+        x = torch.flatten(x, 1) # flatten all dimensions except batch
+        x = F.relu(self.dense1(x))
+        x = F.softmax(self.dense2(x), dim=1)
+        stop=1
+
+        return x
+
+
 # Correction ----------------------------------------------------------------------------------------------------------#
 class GCN_Corrector(nn.Module):
     # Separated Corrector
@@ -85,7 +119,7 @@ class GCN_Corrector(nn.Module):
         :param input_feature: num of input feature
         :param hidden_feature: num of hidden feature
         :param p_dropout: drop out prob.
-        :param num_stage: number of residual blocks
+        :param num_stage: number of residual blocks (Mao = 12 blocks)
         :param node_n: number of nodes in graph
         """
         super(GCN_Corrector, self).__init__()
@@ -129,7 +163,37 @@ class GCN_Corrector(nn.Module):
 
         return out, att
 
-# Transformer, Encoder and Decoder ----------------------------------------------=-------------------------------------#
+
+# Simple PyTorch Transformer ------------------------------------------------------------------------------------------#
+class Simple_Transformer(nn.Module):
+    def __init__(self, input_dim=25, hidden_dim=512, num_layers=6, num_heads=8, dropout_prob=0.1, num_classes=12):
+        super(Simple_Transformer, self).__init__()
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        self.num_heads = num_heads
+        self.dropout_prob = dropout_prob
+        self.num_classes = num_classes
+
+        self.embedding = nn.Linear(input_dim, hidden_dim)
+
+        encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_dim, nhead=num_heads, dim_feedforward=2048,
+                                                   dropout=dropout_prob)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers)
+
+        self.output = nn.Linear(hidden_dim, num_classes)
+
+    def forward(self, x):
+        embedded = self.embedding(x)
+        embedded = embedded.permute(1, 0, 2)
+        encoded = self.transformer_encoder(embedded)
+        pooled = encoded.mean(dim=0)
+        logits = self.output(pooled)
+
+        return logits
+
+
+# Custom Transformer, Encoder and Decoder -----------------------------------------------------------------------------#
 class Transformer(nn.Module):
     def __init__(self, src_vocab, trg_vocab, d_model, N, heads):
         super().__init__()
