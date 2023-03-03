@@ -4,8 +4,8 @@ import itertools
 import torch
 from torch.utils.data import Dataset
 import pandas as pd
-from utils import dct_2d
-from softdtw import SoftDTW
+from utils.data_utils import dct_2d
+from utils.softdtw import SoftDTW
 
 
 class EC3D(Dataset):
@@ -21,11 +21,16 @@ class EC3D(Dataset):
         if sets is None:
             sets = [[0, 1], [2], [3]]
         self.dct_n = dct_n
-        correct, other = load_data(data_path, sets[split], add_data=add_data)
+        correct, other, correct_3d, other_3d = load_data(data_path, sets[split], add_data=add_data)
+        # correct, other shape = [57, var], 19 x 3 = 57
+        # correct_3d, other_3d = [var, 19, 3]
         pairs = dtw_pairs(correct, other, is_cuda=is_cuda)
 
         self.targets_label = [i[1] for i in pairs]
         self.inputs_label = [i[0] for i in pairs]
+
+        self.targets_3d = [correct_3d[i] for i in self.targets_label]
+        self.inputs_raw_3d = [other_3d[i] for i in self.inputs_label]
 
         self.targets = [correct[i] for i in self.targets_label]
         self.inputs_raw = [other[i] for i in self.inputs_label]
@@ -33,6 +38,9 @@ class EC3D(Dataset):
         self.inputs = [dct_2d(torch.from_numpy(x))[:, :self.dct_n].numpy() if x.shape[1] >= self.dct_n else
                        dct_2d(torch.nn.ZeroPad2d((0, self.dct_n - x.shape[1], 0, 0))(torch.from_numpy(x))).numpy()
                        for x in self.inputs_raw]
+
+        # Reshape dct inputs into (25, 19, 3)
+        # self.inputs_reshape = self.inputs
 
         self.node_n = np.shape(self.inputs_raw[0])[0]
         self.batch_ids = list(range(len(self.inputs_raw)))
@@ -44,8 +52,8 @@ class EC3D(Dataset):
     def __len__(self):
         return np.shape(self.inputs)[0]
 
-    def __getitem__(self, item):
-        return self.batch_ids[item], self.inputs[item]
+    def __getitem__(self, index):
+        return self.batch_ids[index], self.inputs[index]
 
 def load_data(data_path, subs, add_data=None):
     with open(data_path, "rb") as f:
@@ -88,10 +96,13 @@ def load_data(data_path, subs, add_data=None):
     poses = data['poses'][:, :, joints]
     poses_gt = data_gt['poses'][:, :, joints]
 
-    correct = {k: poses_gt[v].reshape(-1, poses_gt.shape[1] * poses_gt.shape[2]).T for k, v in lab1.items()}
-    other = {k: poses[v].reshape(-1, poses.shape[1] * poses.shape[2]).T for k, v in labnot1.items()}
+    correct_2d = {k: poses_gt[v].reshape(-1, poses_gt.shape[1] * poses_gt.shape[2]).T for k, v in lab1.items()}
+    other_2d = {k: poses[v].reshape(-1, poses.shape[1] * poses.shape[2]).T for k, v in labnot1.items()}
 
-    return correct, other
+    correct_3d = {k: np.transpose(poses_gt[v], (0, 2, 1)) for k, v in lab1.items()}
+    other_3d = {k: np.transpose(poses[v], (0, 2, 1)) for k, v in labnot1.items()}
+
+    return correct_2d, other_2d, correct_3d, other_3d
 
 def dtw_pairs(correct, incorrect, is_cuda=False):
     pairs = []
