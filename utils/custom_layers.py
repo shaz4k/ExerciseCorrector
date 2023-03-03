@@ -22,7 +22,7 @@ class GraphConvolution(nn.Module):
         in_features (int): Number of input features.
         out_features (int): Number of output features.
         bias (bool): If True, add a learnable bias term to the output features. Default is True.
-        node_n (int): Number of nodes in the graph. Default is 57.
+        node_n (int): Number of nodes in the graph. Default is 57 for 19 joints.
 
     Attributes:
         weight (Parameter): Learnable weight matrix of shape (in_features, out_features).
@@ -89,6 +89,8 @@ class GraphConvolution(nn.Module):
 class GC_Block(nn.Module):
     """
     A residual block of graph convolutional layers.
+
+    Adapted from Mao et. al: https://github.com/wei-mao-2019/LearnTrajDep
 
     This class defines a residual block of graph convolutional layers, which performs two graph convolutional
     operations and adds the original input to the output (element-wise addition). Batch normalization and dropout
