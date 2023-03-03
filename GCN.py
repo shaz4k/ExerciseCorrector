@@ -3,32 +3,21 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+import sys
 
 from train import train_class, train_corr
 from test import test_class
 from dataset import EC3D
 from models import Simple_GCN_Classifier, GCN_Corrector
-from opt import Options
+from utils.opt import Options
+
+"""
+    Uses GCN Layers for the Classification Task
+    Uses GC Residual Blocks (n=2) for the correction task
+"""
 
 
-def train_classifier(arg):
-    start_tensorboard = input('Do you want to save Tensorboard? (y/n)\n')
-
-    if start_tensorboard == 'y':
-        # Create a unique identifier for the run for TensorBoard
-        run_id = arg.datetime
-        print(f'Current run: {run_id}')
-
-        # Initialise Tensorboard
-        writer_tr = SummaryWriter(f'runs/GCN_Class/train/{run_id}')
-        writer_test = SummaryWriter(f'runs/GCN_Class/train/{run_id}')
-    else:
-        pass
-
-    # Check Cuda
-    is_cuda = torch.cuda.is_available()
-
-    # Load or process the dataset
+def load_dataset():
     try:
         print('Loading saved data...')
         with open(arg.processed_path, "rb") as f:
@@ -45,13 +34,39 @@ def train_classifier(arg):
         with open(arg.processed_path, 'wb') as f:
             pickle.dump({'train': data_train, 'test': data_test}, f)
 
+    return data_train, data_test
+
+def save_tensorboard():
+    pass
+
+
+def train_classifier(arg):
+    start_tensorboard = input('Do you want to save Tensorboard? (y/n)\n')
+
+    if start_tensorboard == 'y':
+        # Create a unique identifier for the run for TensorBoard
+        run_id = arg.datetime
+        print(f'Current run: {run_id}')
+
+        # Initialise Tensorboard
+        writer_tr = SummaryWriter(f'runs/GCN_Class/train/{run_id}')
+        writer_test = SummaryWriter(f'runs/GCN_Class/train/{run_id}')
+    else:
+        pass
+
+    # Load or process the dataset
+    data_train, data_test = load_dataset()
     print('Load complete.')
+
     train_loader = DataLoader(dataset=data_train, batch_size=arg.batch_size, shuffle=True, drop_last=True)
     test_loader = DataLoader(dataset=data_test, batch_size=len(data_test))
 
+    # Load model and Adam Optimizer
     model = Simple_GCN_Classifier()
     optimizer = torch.optim.Adam(model.parameters(), lr=arg.lr)
 
+    # Check Cuda
+    is_cuda = torch.cuda.is_available()
     if is_cuda:
         model.cuda()
 
@@ -73,11 +88,9 @@ def train_classifier(arg):
         with tqdm(range(arg.epoch), desc=f'Training model', unit="epoch") as tepoch:
             for epoch in tepoch:
                 tr_l, tr_acc = train_class(train_loader, model, optimizer, is_cuda=is_cuda, level=1)
-
                 if (epoch + 1) % 10 == 0:
                     print(f'\nTraining_loss: {tr_l}')
                     print(f'Traning_acc: {tr_acc}\n')
-
         print('Training Complete.')
 
         start_test = input('Do you want to start testing? (y/n)\n')
@@ -89,21 +102,63 @@ def train_classifier(arg):
                 te_l, te_acc, _, _ = test_class(test_loader, model, is_cuda=is_cuda, level=1)
 
             print(f'Test Loss: {te_l}\n,Test Accuracy:{te_acc}')
-
+            sys.exit()
         else:
             print('Aborted testing.')
+            sys.exit()
 
     else:
         print('Aborted training.')
+        sys.exit()
+
 
 def train_corrector(arg):
-    start_train = input('Do you want to train the GCN corrector?')
-    pass
+    # Load or process the dataset
+    print('Loading dataset..')
+    data_train, data_test = load_dataset()
+    print('Load complete.')
+
+    train_loader = DataLoader(dataset=data_train, batch_size=arg.batch_size, shuffle=True, drop_last=True)
+    test_loader = DataLoader(dataset=data_test, batch_size=len(data_test))
+
+    # Load model
+    model = GCN_Corrector()
+    optimizer = torch.optim.Adam(model.parameters(), lr=arg.lr)
+
+    # Check Cuda
+    is_cuda = torch.cuda.is_available()
+    if is_cuda:
+        model.cuda()
+
+    start_train = input('Do you want to train the GCN corrector? (y/n)\n')
+
+    if start_train == 'y':
+        print('Start training...')
+        with tqdm(range(arg.epoch), desc=f'Training model', unit="epoch") as tepoch:
+            for epoch in tepoch:
+                tr_l = train_corr(train_loader, model, optimizer, is_cuda=is_cuda)
+                if (epoch + 1) % 10 == 0:
+                    print(f'\nTraining_loss: {tr_l}')
+        print('Training Complete.')
+
+        start_test = input('Do you want to test the GCN corrector? (y/n)\n')
+        if start_test == 'y':
+            print('Start testing...')
+            # tes the correction module
+            sys.exit()
+
+        else:
+            print('Testing aborted.')
+            sys.exit()
+
+    else:
+        print('Training aborted.')
+        sys.exit()
+
 
 def train_class_corr(arg):
     start_train = input('Do you want to train the GCN classifier and corrector?')
     pass
-
 
 
 if __name__ == '__main__':
