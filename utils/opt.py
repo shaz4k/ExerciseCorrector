@@ -29,11 +29,16 @@ class Options:
         self.parser.add_argument('--hidden', type=int, default=256, help='Number of hidden features')
         self.parser.add_argument('--p_dropout', type=float, default=0.5, help='Dropout probability, 1 for none')
         self.parser.add_argument('--lr', type=float, default=0.01, help='Learning rate')
+        self.parser.add_argument('--lr_decay', type=int, default=5, help='every lr_decay epoch do lr decay')
+    def _print(self):
+        print("\n==================Options=================")
+        pprint(vars(self.arg), indent=4)
+        print("==========================================\n")
 
     def parse(self):
         self._initial()
         self.arg = self.parser.parse_args()
-
+        self._print()
         return self.arg
 
 
