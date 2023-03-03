@@ -279,6 +279,7 @@ class _SoftDTW(Function):
 class SoftDTW(torch.nn.Module):
     """
     The soft DTW implementation that optionally supports CUDA
+    Source: https://github.com/Maghoumi/pytorch-softdtw-cuda/blob/master/soft_dtw_cuda.py
     """
 
     def __init__(self, use_cuda, gamma=1.0, normalize=False, bandwidth=None, dist_func=None):
