@@ -1,9 +1,9 @@
-import torch
-import torch.nn as nn
 import numpy as np
+import torch
+from utils.data_utils import idct, idct_2d
 
 """
-    Torch DCT: dct and dct_2d
+    Functions for training: get_labels, dtw_loss
 """
 def get_labels(raw_labels, level=0):
     if level == 0:
@@ -23,53 +23,6 @@ def get_labels(raw_labels, level=0):
             labels[i] = mapping[el[0]] + np.where(np.array(map_label[el[0]]) == el[2])[0].item()
         return torch.from_numpy(labels).long()
 
-
-# torch dct stuff -----------------------------------------------------------------------------------------------------#
-def dct_2d(x, norm=None):
-    """
-    2-dimentional Discrete Cosine Transform, Type II (a.k.a. the DCT)
-    For the meaning of the parameter `norm`, see:
-    https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.fftpack.dct.html
-    :param x: the input signal
-    :param norm: the normalization, None or 'ortho'
-    :return: the DCT-II of the signal over the last 2 dimensions
-    """
-    X1 = dct(x, norm=norm)
-    X2 = dct(X1.transpose(-1, -2), norm=norm)
-    return X2.transpose(-1, -2)
-
-def dct(x, norm=None):
-    """
-    Discrete Cosine Transform, Type II (a.k.a. the DCT)
-    For the meaning of the parameter `norm`, see:
-    https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.fftpack.dct.html
-    :param x: the input signal
-    :param norm: the normalization, None or 'ortho'
-    :return: the DCT-II of the signal over the last dimension
-    """
-    x_shape = x.shape
-    N = x_shape[-1]
-    x = x.contiguous().view(-1, N)
-
-    v = torch.cat([x[:, ::2], x[:, 1::2].flip([1])], dim=1)
-
-    Vc = torch.view_as_real(torch.fft.fft(v))
-
-    k = - torch.arange(N, dtype=x.dtype, device=x.device)[None, :] * np.pi / (2 * N)
-    W_r = torch.cos(k)
-    W_i = torch.sin(k)
-
-    V = Vc[:, :, 0] * W_r - Vc[:, :, 1] * W_i
-
-    if norm == 'ortho':
-        V[:, 0] /= np.sqrt(N) * 2
-        V[:, 1:] /= np.sqrt(N / 2) * 2
-
-    V = 2 * V.view(*x_shape)
-
-    return V
-
-# ---------------------------------------------------------------------------------------------------------------------#
 
 def dtw_loss(originals, deltas, targets, criterion, attentions=None, is_cuda=False, test=False):
     loss = 0
@@ -100,13 +53,13 @@ def dtw_loss(originals, deltas, targets, criterion, attentions=None, is_cuda=Fal
             targ = targ.cuda()
 
         crit = criterion(out, targ) - 1 / 2 * (criterion(out, out) + criterion(targ, targ))
-        crit_org =  criterion(org.cuda(), targ) - 1 / 2 * (criterion(org.cuda(), org.cuda()) + criterion(targ, targ))
+        crit_org = criterion(org.cuda(), targ) - 1 / 2 * (criterion(org.cuda(), org.cuda()) + criterion(targ, targ))
         mse = torch.nn.MSELoss()
-        smoothness_loss = mse(out[:,1:], out[:,:-1])
+        smoothness_loss = mse(out[:, 1:], out[:, :-1])
 
         dtw_loss_corr.append(crit.item())
         dtw_loss_org.append(crit_org.item())
-        loss += crit + 1e-3 * smoothness_loss      # dtw_loss + smoothness
+        loss += crit + 1e-3 * smoothness_loss  # dtw_loss + smoothness
         # loss += crit  # without smoothness
 
         if test:
