@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from utils import get_labels
+from utils.train_utils import get_labels
 
 class AccumLoss(object):
     def __init__(self):
