@@ -102,7 +102,6 @@ def train_classifier(arg):
                 te_l, te_acc, _, _ = test_class(test_loader, model, is_cuda=is_cuda, level=1)
 
             print(f'Test Loss: {te_l}\n,Test Accuracy:{te_acc}')
-            sys.exit()
         else:
             print('Aborted testing.')
             sys.exit()
