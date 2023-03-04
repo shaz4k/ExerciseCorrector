@@ -17,6 +17,46 @@ class AccumLoss(object):
         self.avg = self.sum / self.count
 
 
+def test_cnn(test_loader, model, writer, is_cuda=False, level=0):
+    te_l = AccumLoss()
+    if level == 0:
+        criterion = nn.NLLLoss(weight=torch.tensor([1, 0.5, 1, 0.5, 1, 0.5]))
+    else:
+        criterion = nn.NLLLoss()
+    # Set the model to evaluation mode
+    model.eval()
+
+    correct = 0
+    total = 0
+    for i, (batch_id, inputs) in enumerate(test_loader):
+
+        if is_cuda:
+            inputs = inputs.float().cuda()
+        else:
+            inputs = inputs.float()
+
+    labels = get_labels([test_loader.dataset.inputs_label[int(i)] for i in batch_id], level=level).cuda()
+    batch_size = inputs.size(0)
+
+    # Forward
+    outputs = model(inputs)
+    _, predicted = torch.max(outputs.data, 1)
+
+    total += labels.size(0)
+    correct += (predicted == labels).sum().item()
+
+    # calculate loss using loss function
+    loss = criterion(outputs, labels)
+
+    # update the training loss
+    te_l.update(loss.cpu().data.numpy() * batch_size, batch_size)
+    # Log the test accuracy to TensorBoard (if enabled)
+    if writer is not None:
+        test_accuracy = 100 * correct / total
+        writer.add_scalar('Test Accuracy', test_accuracy)
+
+    return te_l.avg, 100 * correct / total
+
 def test_class(test_loader, model, is_cuda=False, level=0):
     te_l = AccumLoss()
 
