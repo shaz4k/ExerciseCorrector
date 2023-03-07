@@ -23,7 +23,7 @@ class AccumLoss(object):
         self.sum += val  # sum of all losses over batches seen so far
         self.count += n  # total no. batches seen so far
         self.avg = self.sum / self.count  # average loss over batches seen so far
-        stop=1
+
 
 def train_cnn(train_loader, model, optimizer, is_cuda, writer, epoch, level=0):
     tr_l = AccumLoss()
@@ -79,7 +79,7 @@ def train_cnn(train_loader, model, optimizer, is_cuda, writer, epoch, level=0):
     return tr_l.avg, 100 * correct / total
 
 
-def train_class(train_loader, model, optimizer, is_cuda, level=0):
+def train_class(train_loader, model, optimizer, writer, epoch, is_cuda=False, level=0):
     """
     :param train_loader:  PyTorch data loader for the training dataset
     :param model: the PyTorch model to be trained
@@ -122,6 +122,13 @@ def train_class(train_loader, model, optimizer, is_cuda, level=0):
 
         # update the training loss
         tr_l.update(loss.cpu().data.numpy() * batch_size, batch_size)
+
+        # Log the training loss to TensorBoard every 100 iterations (if enabled)
+        if writer is not None and i % 100 == 0:
+            avg_train_loss = tr_l.avg
+            writer.add_scalar('Training Loss', avg_train_loss, epoch * len(train_loader) + i)
+            avg_train_acc = 100 * correct/total
+            writer.add_scalar('Training Accuracy', avg_train_acc, epoch * len(train_loader) + i)
 
         return tr_l.avg, 100 * correct / total
 
