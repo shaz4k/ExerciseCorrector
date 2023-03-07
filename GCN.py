@@ -2,8 +2,10 @@ import pickle
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from torch.optim import lr_scheduler
 from tqdm import tqdm
 import sys
+import os
 
 from train import train_class, train_corr
 from test import test_class
@@ -36,24 +38,9 @@ def load_dataset():
 
     return data_train, data_test
 
-def save_tensorboard():
-    pass
-
 
 def train_classifier(arg):
-    start_tensorboard = input('Do you want to save Tensorboard? (y/n)\n')
-
-    if start_tensorboard == 'y':
-        # Create a unique identifier for the run for TensorBoard
-        run_id = arg.datetime
-        print(f'Current run: {run_id}')
-
-        # Initialise Tensorboard
-        writer_tr = SummaryWriter(f'runs/GCN_Class/train/{run_id}')
-        writer_test = SummaryWriter(f'runs/GCN_Class/train/{run_id}')
-    else:
-        pass
-
+    save_location = 'runs/GCN-Classifier'
     # Load or process the dataset
     data_train, data_test = load_dataset()
     print('Load complete.')
@@ -63,20 +50,47 @@ def train_classifier(arg):
 
     # Load model and Adam Optimizer
     model = Simple_GCN_Classifier()
+
+    # Optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=arg.lr)
+
+    # Define the learning rate scheduler
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=arg.gamma)
 
     # Check Cuda
     is_cuda = torch.cuda.is_available()
     if is_cuda:
         model.cuda()
 
-    # save_graph = input('Do you want to save model graph to Tensorboard? (y/n)\n')
-    # if save_graph == 'y':
-    #     examples = iter(train_loader)
-    #     batch_ids, example_targets = next(examples)
-    #     writer.add_graph(model, example_targets)
-    # else:
-    #     pass
+    start_tensorboard = input('Do you want to save Tensorboard? (y/n)\n')
+
+    if start_tensorboard == 'y':
+        arg.record = True
+
+    if arg.record:
+        print('Tensorboard Enabled.')
+        # Create a unique identifier for the run for TensorBoard
+        run_id = arg.datetime
+        print(f'Current run: {run_id}')
+
+        # Initialise Tensorboard
+        writer = SummaryWriter(f'{save_location}/train/{run_id}')
+
+        # Get example data
+        data_iter = iter(train_loader)
+        _, example_input = next(data_iter)
+
+        if is_cuda:
+            example_input = example_input.float().cuda()
+        else:
+            example_input = example_input.float()
+
+        writer.add_graph(model, example_input)
+        writer.close()
+
+    else:
+        print('Tensorboard disabled')
+        writer = None
 
     start_train = input('Do you want to start training the model? (y/n)\n')
 
@@ -87,28 +101,45 @@ def train_classifier(arg):
         # range = 0 to epoch-1, description=Training model, unit updated every epoch to current epoch
         with tqdm(range(arg.epoch), desc=f'Training model', unit="epoch") as tepoch:
             for epoch in tepoch:
-                tr_l, tr_acc = train_class(train_loader, model, optimizer, is_cuda=is_cuda, level=1)
+                tr_l, tr_acc = train_class(train_loader, model, optimizer, writer, epoch, is_cuda, level=1)
                 if (epoch + 1) % 10 == 0:
                     print(f'\nTraining_loss: {tr_l}')
-                    print(f'Traning_acc: {tr_acc}\n')
+                    print(f'Training_acc: {tr_acc}\n')
+
+                # Update the learning rate
+                scheduler.step()
+
         print('Training Complete.')
 
         start_test = input('Do you want to start testing? (y/n)\n')
 
         if start_test == 'y':
-            print('Start training')
+            print('Start testing')
 
             with torch.no_grad():
                 te_l, te_acc, _, _ = test_class(test_loader, model, is_cuda=is_cuda, level=1)
 
             print(f'Test Loss: {te_l}\n,Test Accuracy:{te_acc}')
         else:
-            print('Aborted testing.')
-            sys.exit()
+            pass
+
+        save_model = input('Would you like to save the trained model? (y/n)\n')
+        if save_model == 'y':
+            filename = str(arg.datetime)
+            save_path = f'{save_location}/models'
+            if not os.path.exists(save_path):
+                os.makedirs(save_path)
+            torch.save(model.state_dict(), f'{save_path}/{filename}.pth')
+            print(f'Save successful\nFilename: {filename}.pth')
+        else:
+            pass
+
 
     else:
         print('Aborted training.')
         sys.exit()
+
+    sys.exit()
 
 
 def train_corrector(arg):
@@ -144,15 +175,18 @@ def train_corrector(arg):
         if start_test == 'y':
             print('Start testing...')
             # tes the correction module
-            sys.exit()
+            # sys.exit()
 
         else:
             print('Testing aborted.')
-            sys.exit()
+            # sys.exit()
 
     else:
         print('Training aborted.')
         sys.exit()
+
+    print('End.')
+    sys.exit()
 
 
 def train_class_corr(arg):
@@ -161,6 +195,7 @@ def train_class_corr(arg):
 
 
 if __name__ == '__main__':
+    torch.manual_seed(42)
     torch.cuda.set_device(0)
     print('GPU Index: {}'.format(torch.cuda.current_device()))
     available_models = ['(1) GCN Classifier', '(2) GCN Corrector', '(3) Combined GCN Classifier and Corrector']
