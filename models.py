@@ -78,14 +78,14 @@ class Simple_GCN_Classifier(nn.Module):
 
 
 class CNN_Classifier(nn.Module):
-    def __init__(self, num_classes=12):
+    def __init__(self, in_channels, num_classes=12):
         super(CNN_Classifier, self).__init__()
-        self.conv1 = Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding=1)
-        self.conv2 = Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
+        self.conv1 = Conv2d(in_channels=in_channels, out_channels=32, kernel_size=2, padding=1)
+        self.conv2 = Conv2d(in_channels=32, out_channels=64, kernel_size=2, padding=1)
         self.maxPool1 = MaxPool2d(kernel_size=2, stride=2)
         self.batchNorm1 = BatchNorm2d(64)
 
-        self.conv3 = Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
+        self.conv3 = Conv2d(in_channels=64, out_channels=128, kernel_size=2, padding=1)
         self.maxPool2 = MaxPool2d(kernel_size=2, stride=2)
         self.batchNorm2 = BatchNorm2d(128)
 
@@ -94,7 +94,9 @@ class CNN_Classifier(nn.Module):
         self.dense2 = nn.Linear(64, num_classes)
 
     def forward(self, inputs):
-        inputs = inputs.view(-1, 1, 57, 25)  # reshape input to [batch_size, channels, height, width]
+        if len(inputs.shape) == 3:
+            b, n, f = inputs.shape
+            inputs = inputs.view(-1, 1, n, f)
         x = F.relu(self.conv1(inputs))
         x = F.relu(self.conv2(x))
         x = self.maxPool1(x)
@@ -103,11 +105,44 @@ class CNN_Classifier(nn.Module):
         x = self.maxPool2(x)
         x = self.batchNorm2(x)
         x = self.globalAvgPool(x)
-        x = torch.flatten(x, 1) # flatten all dimensions except batch
+        x = torch.flatten(x, 1)  # flatten all dimensions except batch
         x = F.relu(self.dense1(x))
         x = F.softmax(self.dense2(x), dim=1)
-        stop=1
 
+        return x
+
+
+class CNN_Classifier_v2(nn.Module):
+    def __init__(self, in_channels, num_classes=12):
+        super(CNN_Classifier_v2, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=32, kernel_size=2, padding=1)
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=2, padding=1)
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=2, padding=1)
+        self.conv4 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=2, padding=1)
+        self.maxPool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.batchNorm1 = nn.BatchNorm2d(64)
+        self.batchNorm2 = nn.BatchNorm2d(256)
+        self.batchNorm3 = nn.BatchNorm2d(512)
+
+        self.globalAvgPool = nn.AdaptiveAvgPool2d((1, 1))
+        self.dense1 = nn.Linear(256, 128)
+        self.dense2 = nn.Linear(128, num_classes)
+    def forward(self, inputs):
+        if len(inputs.shape) == 3:
+            b, n, f = inputs.shape
+            inputs = inputs.view(-1, 1, n, f)
+        x = F.relu(self.conv1(inputs))
+        x = F.relu(self.conv2(x))
+        x = self.maxPool(x)
+        x = self.batchNorm1(x)
+        x = F.relu(self.conv3(x))
+        x = F.relu(self.conv4(x))
+        x = self.maxPool(x)
+        x = self.batchNorm2(x)
+        x = self.globalAvgPool(x)
+        x = torch.flatten(x, 1)
+        x = F.relu(self.dense1(x))
+        x = F.softmax(self.dense2(x), dim=1)
         return x
 
 
