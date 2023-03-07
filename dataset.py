@@ -10,27 +10,23 @@ from utils.softdtw import SoftDTW
 
 class EC3D(Dataset):
 
-    # Preprocessing steps from Original paper
-    # 1 - load data from data_path (default path =
+    # Preprocessing steps from Original paper:
+    # https://github.com/Jacoo-Zhao/3D-Pose-Based-Feedback-For-Physical-Exercises
+    # 1 - load data from data_path
     # 2 - apply dtw to create matched pairs of sequences for correct and incorrect motion
-    # 3 - inputs and targets store the preprocessed data
-    # 4 - apply DCT to inputs for first dct_n(=25) co-efficients
+    # 3 - targets = correct motion only, inputs = examples to train model
+    # 4 - apply DCT to inputs for first dct_n(=25) co-efficients shape [57, 25] (57=19j*3d)
     # 5 - node_n stores no. joints
     # 6 - batch_ids stores indices of data samples
     def __init__(self, data_path, dct_n=25, split=0, sets=None, is_cuda=False, add_data=None):
         if sets is None:
             sets = [[0, 1], [2], [3]]
         self.dct_n = dct_n
-        correct, other, correct_3d, other_3d = load_data(data_path, sets[split], add_data=add_data)
-        # correct, other shape = [57, var], 19 x 3 = 57
-        # correct_3d, other_3d = [var, 19, 3]
+        correct, other = load_data(data_path, sets[split], add_data=add_data)
         pairs = dtw_pairs(correct, other, is_cuda=is_cuda)
 
         self.targets_label = [i[1] for i in pairs]
         self.inputs_label = [i[0] for i in pairs]
-
-        self.targets_3d = [correct_3d[i] for i in self.targets_label]
-        self.inputs_raw_3d = [other_3d[i] for i in self.inputs_label]
 
         self.targets = [correct[i] for i in self.targets_label]
         self.inputs_raw = [other[i] for i in self.inputs_label]
@@ -39,12 +35,10 @@ class EC3D(Dataset):
                        dct_2d(torch.nn.ZeroPad2d((0, self.dct_n - x.shape[1], 0, 0))(torch.from_numpy(x))).numpy()
                        for x in self.inputs_raw]
 
-        # Reshape dct inputs into (25, 19, 3)
-        # self.inputs_reshape = self.inputs
-
         self.node_n = np.shape(self.inputs_raw[0])[0]
         self.batch_ids = list(range(len(self.inputs_raw)))
         self.name = "EC3D"
+
         # pdb.set_trace()
         # with open('data/DTW_Method.pickle', 'wb') as f:
         #     pickle.dump({'targets':self.targets,'tar_label':self.targets_label,'inputs':self.inputs,'inputs_raw':self.inputs_raw, 'inputs_label': self.inputs_label}, f)
@@ -55,7 +49,63 @@ class EC3D(Dataset):
     def __getitem__(self, index):
         return self.batch_ids[index], self.inputs[index]
 
-def load_data(data_path, subs, add_data=None):
+
+class EC3D_new(Dataset):
+    def __init__(self, data_path, dct_n=25, split=0, sets=None, rep_3d=False, is_cuda=False, add_data=None):
+        if sets is None:
+            sets = [[0, 1], [2], [3]]
+
+        correct, other, pairs, min_frames = load_data(data_path, sets[split], rep_3d=rep_3d, add_data=add_data)
+
+        self.targets_label = [i[1] for i in pairs]
+        self.inputs_label = [i[0] for i in pairs]
+
+        targets = [correct[i] for i in self.targets_label]
+        inputs_raw = [other[i] for i in self.inputs_label]
+
+        # Reshape for CNN input = [batch, channels, height, width]
+        self.targets = [arr.transpose((1, 2, 0)) for arr in targets]
+        self.inputs_raw = [arr.transpose((1, 2, 0)) for arr in inputs_raw]
+
+        self.batch_ids = list(range(len(self.inputs_raw)))
+
+        # temp
+        self.inputs = resample(self.inputs_raw, target_frames=24)
+        stop=1
+
+    def __len__(self):
+        return np.shape(self.inputs)[0]
+
+    def __getitem__(self, index):
+        return self.batch_ids[index], self.inputs[index]
+
+
+def normalise(data):
+    # normalise
+    normalised_data = []
+    for sample in data:
+        v_min = np.min(sample, axis=2, keepdims=True)
+        v_max = np.max(sample, axis=2, keepdims=True)
+        num = np.subtract(sample, v_min)
+        den = np.subtract(v_max, v_min)
+        normalised = np.divide(num, den)
+        normalised_data.append(normalised)
+
+    return normalised_data
+
+def resample(data, target_frames):
+    resampled_data = []
+    for i, array in enumerate(data):
+        num_frames = array.shape[2]
+        if num_frames > target_frames:
+            step_size = num_frames//target_frames
+            new_array = array[:, :, range(0, num_frames, step_size)][:, :, :target_frames]
+        else:
+            new_array = array
+        resampled_data.append(new_array)
+    return resampled_data
+
+def load_data(data_path, subs, rep_3d=False, add_data=None, is_cuda=False):
     with open(data_path, "rb") as f:
         data_gt = pickle.load(f)
 
@@ -96,19 +146,35 @@ def load_data(data_path, subs, add_data=None):
     poses = data['poses'][:, :, joints]
     poses_gt = data_gt['poses'][:, :, joints]
 
-    correct_2d = {k: poses_gt[v].reshape(-1, poses_gt.shape[1] * poses_gt.shape[2]).T for k, v in lab1.items()}
-    other_2d = {k: poses[v].reshape(-1, poses.shape[1] * poses.shape[2]).T for k, v in labnot1.items()}
+    if rep_3d:
+        correct = {k: poses_gt[v] for k, v in lab1.items()}
+        other = {k: poses[v] for k, v in labnot1.items()}
 
-    correct_3d = {k: np.transpose(poses_gt[v], (0, 2, 1)) for k, v in lab1.items()}
-    other_3d = {k: np.transpose(poses[v], (0, 2, 1)) for k, v in labnot1.items()}
+        # Normalise skeletons
 
-    return correct_2d, other_2d, correct_3d, other_3d
+        # Find min frames (first dim)
+        corr_min = np.min([v.shape[0] for k, v in lab1.items()])
+        other_min = np.min([v.shape[0] for k, v in labnot1.items()])
+        min_frames = min(corr_min, other_min)
+
+        # Find dtw pairs using flattened representation
+        correct_2d = {k: poses_gt[v].reshape(-1, poses_gt.shape[1] * poses_gt.shape[2]).T for k, v in lab1.items()}
+        other_2d = {k: poses[v].reshape(-1, poses.shape[1] * poses.shape[2]).T for k, v in labnot1.items()}
+        pairs = dtw_pairs(correct_2d, other_2d, is_cuda=is_cuda)
+    else:
+        correct = {k: poses_gt[v].reshape(-1, poses_gt.shape[1] * poses_gt.shape[2]).T for k, v in lab1.items()}
+        other = {k: poses[v].reshape(-1, poses.shape[1] * poses.shape[2]).T for k, v in labnot1.items()}
+        min_frames = None
+        pairs = dtw_pairs(correct, other, is_cuda=is_cuda)
+
+    return correct, other, pairs, min_frames
+
 
 def dtw_pairs(correct, incorrect, is_cuda=False):
     pairs = []
     for act, sub in set([(k[0], k[1]) for k in incorrect.keys()]):
         ''' fetch from all sets or only training set (dataset_fetch baseline used to compare dtw_loss)'''
-        correct_sub = {k: v for k, v in correct.items() if k[0] == act and k[1] == sub}     # all datasets
+        correct_sub = {k: v for k, v in correct.items() if k[0] == act and k[1] == sub}  # all datasets
         # correct_sub = {k: v for k, v in correct.items() if k[0] == act and k[1] != sub}   # training sets
         incorrect_sub = {k: v for k, v in incorrect.items() if k[0] == act and k[1] == sub}
         dtw_sub = {k: {} for k in incorrect_sub.keys()}
@@ -124,100 +190,3 @@ def dtw_pairs(correct, incorrect, is_cuda=False):
         dtw = pd.DataFrame.from_dict(dtw_sub, orient='index').idxmin(axis=1)
         pairs = pairs + list(zip(dtw.index, dtw))
     return pairs
-
-
-class NTU60(Dataset):
-    def __init__(self, filepath, use_vel=False, dct_n=25, is_cuda=False, split='train'):
-        """
-        :param filepath:
-        :param use_vel:
-        :param dct_n:
-        :param is_cuda:
-        :param split:
-        """
-        self.dct_n = dct_n
-        train_subject = [1, 2, 4, 8, 9, 13, 14, 15, 16, 17, 19, 25, 27, 28, 31, 34, 35]
-        val_subject = [5, 18, 38]
-        with open(filepath, "rb") as f:
-            data = pickle.load(f)
-        subject_id = data['labels']['subject_id']
-        action_class = data['labels']['action_class']
-        skes = data['skes']
-
-        tra_sks = [];
-        val_sks = [];
-        tes_sks = [];
-        tra_ac = [];
-        val_ac = [];
-        tes_ac = []
-        for i in range(len(data['skes'])):
-            if subject_id[i][0] in train_subject:
-                tra_sks.append(skes[i])
-                tra_ac.append(action_class[i][0])
-
-            elif subject_id[i][0] in val_subject:
-                val_sks.append(skes[i])
-                val_ac.append(action_class[i][0])
-
-            else:
-                tes_sks.append(skes[i])
-                tes_ac.append(action_class[i][0])
-
-        if split == 'train':
-            self.skes = tra_sks
-            # add Noise
-            # mu = 0
-            # sigma = 50
-            # for i in range(len(self.skes)):
-            #     self.skes[i] += torch.normal(mean=mu, std=sigma, size=self.skes[i].shape)
-            self.labels = np.array(tra_ac) - 1
-            # pdb.set_trace()
-            # self.labels = np.concatenate((self.labels,self.labels))
-
-        elif split == 'validation':
-            self.skes = val_sks
-            self.labels = np.array(val_ac) - 1
-        else:
-            self.skes = tes_sks
-            self.labels = np.array(tes_ac) - 1
-        self.inputs = []
-        for x in self.skes:
-            x = x.reshape(x.shape[0], 75).T  # (n_frames, 3, 25) --> (75, n_frames)
-            if x.shape[1] >= 0:
-                if x.shape[1] >= self.dct_n:
-                    x_dct = dct_2d(x)[:, :self.dct_n].numpy()  # 75, dct_n
-                    # if split == "train":
-                    # x_dct2 = dct_2d(torch.flip(x,dims=[1]))[:, :self.dct_n].numpy() #75, dct_n
-
-                else:
-                    padding_func = torch.nn.ReplicationPad2d(padding=(0, self.dct_n - x.shape[1], 0, 0))
-                    x_dct = dct_2d(padding_func(x.unsqueeze(0))[0]).numpy()
-                    # if split == "train":
-                    # x_dct2 = dct_2d(padding_func(torch.flip(x,dims=[1]).unsqueeze(0))[0]).numpy()
-
-                if use_vel:
-                    vel = x[:, 1:] - x[:, :-1]
-                    if vel.shape[1] == 0:
-                        vel = torch.zeros(x.shape)
-
-                    if vel.shape[1] >= self.dct_n:
-                        vel_dct = dct_2d(vel)[:, :self.dct_n].numpy()
-                    else:
-                        padding_func = torch.nn.ReplicationPad2d(padding=(0, self.dct_n - vel.shape[1], 0, 0))
-                        vel_dct = dct_2d(padding_func(vel.unsqueeze(0))[0]).numpy()
-                    input_dct = np.concatenate([x_dct, vel_dct], axis=1)  # 75, 2*dct_n
-                else:
-                    input_dct = x_dct
-
-                self.inputs.append(input_dct)
-                # if split == "train":
-                # self.inputs.append(x_dct2)
-
-        self.batch_ids = list(range(len(self.inputs)))
-        self.name = "NTU60"
-
-    def __len__(self):
-        return len(self.inputs)
-
-    def __getitem__(self, item):
-        return self.batch_ids[item], self.inputs[item]
