@@ -1,67 +1,68 @@
 import pickle
-import torch
-from torch.utils.data import DataLoader
-from utils.train_utils import get_labels
-from utils.opt import Options
-from dataset import EC3D_new, EC3D
-from models import GCN_Corrector, Simple_GCN_Classifier
-import sys
 import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 
 
-def main(arg):
-    # Check CUDA
-    is_cuda = torch.cuda.is_available()
-
-    name = 'temp_3d.pkl'
-    save_location = 'data/EC3D'
-    try:
-        with open(f'{save_location}/{name}', 'rb') as f:
-            data = pickle.load(f)
-        data_train = data[0]
-        data_test = data[1]
-    except FileNotFoundError:
-        # Load raw data
-        sets = [[0, 1, 2], [], [3]]
-        # Preprocessing
-        data_train = EC3D_new(arg.raw_data_path, sets=sets, split=0, rep_3d=True, is_cuda=is_cuda)
-        data_test = EC3D_new(arg.raw_data_path, sets=sets, split=0, rep_3d=True, is_cuda=is_cuda)
-        print('Load complete.')
-        with open(f'{save_location}/{name}', 'wb') as f:
-            pickle.dump((data_train, data_test), f)
-
-    # test sample
-    example = data_test.inputs_raw[0]
-    length = example.shape[2]
-    test_frame = example[:, :, 0].T
-
+def plot_skeleton_animation(num_frames, data1, data2=None):
     connections = [[0, 1], [1, 2], [1, 5], [1, 8], [2, 3], [3, 4], [5, 6], [6, 7], [8, 9], [8, 12], [9, 10],
-                        [10, 11], [11, 17], [11, 18], [12, 13], [13, 14], [14, 15]]
-    # Create figure and axis objects
+                   [10, 11], [11, 17], [11, 18], [12, 13], [13, 14], [14, 15]]
+
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
 
-    # Plot joint coordinates and connections
-    ax.scatter(test_frame[:, 0], test_frame[:, 1], test_frame[:, 2], c='r', marker='o')  # plot joint positions
-    for i, j in connections:
-        ax.plot([test_frame[i, 0], test_frame[j, 0]], [test_frame[i, 1], test_frame[j, 1]], [test_frame[i, 2], test_frame[j, 2]],
-                'r-')  # plot connection lines
+    def update(frame):
+        ax.clear()
 
-    # Set axis limits and labels
-    ax.set_xlim3d([-1, 1])
-    ax.set_ylim3d([-1, 1])
-    ax.set_zlim3d([-1, 1])
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
+        # Plot first set of joint coordinates and connections
+        ax.scatter(data1[frame, :, 0], data1[frame, :, 1], data1[frame, :, 2],
+                   color='red')  # plot x-y-z coordinates of first skeleton
+        for i, j in connections:
+            ax.plot([data1[frame, i, 0], data1[frame, j, 0]],
+                    [data1[frame, i, 1], data1[frame, j, 1]],
+                    [data1[frame, i, 2], data1[frame, j, 2]], color='red')  # plot connection lines of first skeleton
 
-    # Show the plot
+        if data2 is not None:
+            # Plot second set of joint coordinates and connections if
+            ax.scatter(data2[frame, :, 0], data2[frame, :, 1], data2[frame, :, 2],
+                       color='green')  # plot x-y-z coordinates of second skeleton
+            for i, j in connections:
+                ax.plot([data2[frame, i, 0], data2[frame, j, 0]],
+                        [data2[frame, i, 1], data2[frame, j, 1]],
+                        [data2[frame, i, 2], data2[frame, j, 2]],
+                        color='green')  # plot connection lines of second skeleton
+
+        # Set axis limits and labels
+        ax.set_xlim([-0.5, 0.5])
+        ax.set_ylim([-0.5, 0.5])
+        ax.set_zlim([-0.5, 0.5])
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+
+        # Set viewing angle
+        ax.view_init(elev=30, azim=45)
+
+    ani = FuncAnimation(fig, update, frames=num_frames, interval=50)
+
+    return ani
+
+
+if __name__ == '__main__':
+    print('Running example')
+    saved_data = 'data/EC3D/temp_3d.pkl'
+    # Loading saved data
+    with open(saved_data, 'rb') as f:
+        dataset = pickle.load(f)
+    data_train = dataset[0]
+    data_test = dataset[1]
+
+    data1 = data_test.inputs_raw[49].T
+    data2 = data_test.inputs_raw[50].T
+    num_frames = min(data1.shape[0], data2.shape[0]) - 1
+
+    ani = plot_skeleton_animation(num_frames, data1, data2)
+    my_ani = ani
     plt.show()
 
 
 
-
-if __name__ == '__main__':
-    torch.cuda.set_device(0)
-    arg = Options().parse()
-    main(arg)
