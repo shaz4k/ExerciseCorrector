@@ -2,49 +2,50 @@ import pickle
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
+class SkeletonVisualizer:
+    def __init__(self, num_frames, data1, data2=None):
+        self.data1 = data1
+        self.data2 = data2
+        self.num_frames = num_frames
+        self.connections = [[0, 1], [1, 2], [1, 5], [1, 8], [2, 3], [3, 4], [5, 6], [6, 7], [8, 9], [8, 12], [9, 10],
+                            [10, 11], [11, 17], [11, 18], [12, 13], [13, 14], [14, 15]]
 
-def plot_skeleton_animation(num_frames, data1, data2=None):
-    connections = [[0, 1], [1, 2], [1, 5], [1, 8], [2, 3], [3, 4], [5, 6], [6, 7], [8, 9], [8, 12], [9, 10],
-                   [10, 11], [11, 17], [11, 18], [12, 13], [13, 14], [14, 15]]
+        self.fig = plt.figure()
+        self.ax = self.fig.add_subplot(111, projection='3d')
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
+    def update(self, frame):
+        self.ax.clear()
+        color = 'blue' if self.data2 is None else 'red'
 
-    def update(frame):
-        ax.clear()
+        self.ax.scatter(self.data1[frame, :, 0], self.data1[frame, :, 1], self.data1[frame, :, 2], color=color)
+        for i, j in self.connections:
+            self.ax.plot([self.data1[frame, i, 0], self.data1[frame, j, 0]],
+                         [self.data1[frame, i, 1], self.data1[frame, j, 1]],
+                         [self.data1[frame, i, 2], self.data1[frame, j, 2]], color=color)
 
-        # Plot first set of joint coordinates and connections
-        ax.scatter(data1[frame, :, 0], data1[frame, :, 1], data1[frame, :, 2],
-                   color='red')  # plot x-y-z coordinates of first skeleton
-        for i, j in connections:
-            ax.plot([data1[frame, i, 0], data1[frame, j, 0]],
-                    [data1[frame, i, 1], data1[frame, j, 1]],
-                    [data1[frame, i, 2], data1[frame, j, 2]], color='red')  # plot connection lines of first skeleton
+        if self.data2 is not None:
+            self.ax.scatter(self.data2[frame, :, 0], self.data2[frame, :, 1], self.data2[frame, :, 2], color='green')
+            for i, j in self.connections:
+                self.ax.plot([self.data2[frame, i, 0], self.data2[frame, j, 0]],
+                             [self.data2[frame, i, 1], self.data2[frame, j, 1]],
+                             [self.data2[frame, i, 2], self.data2[frame, j, 2]],
+                             color='green')
 
-        if data2 is not None:
-            # Plot second set of joint coordinates and connections if
-            ax.scatter(data2[frame, :, 0], data2[frame, :, 1], data2[frame, :, 2],
-                       color='green')  # plot x-y-z coordinates of second skeleton
-            for i, j in connections:
-                ax.plot([data2[frame, i, 0], data2[frame, j, 0]],
-                        [data2[frame, i, 1], data2[frame, j, 1]],
-                        [data2[frame, i, 2], data2[frame, j, 2]],
-                        color='green')  # plot connection lines of second skeleton
+        self.ax.set_xlim([-0.5, 0.5])
+        self.ax.set_ylim([-0.5, 0.5])
+        self.ax.set_zlim([-0.5, 0.5])
+        self.ax.set_xlabel('X')
+        self.ax.set_ylabel('Y')
+        self.ax.set_zlabel('Z')
 
-        # Set axis limits and labels
-        ax.set_xlim([-0.5, 0.5])
-        ax.set_ylim([-0.5, 0.5])
-        ax.set_zlim([-0.5, 0.5])
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
+        self.ax.view_init(elev=30, azim=45)
 
-        # Set viewing angle
-        ax.view_init(elev=30, azim=45)
-
-    ani = FuncAnimation(fig, update, frames=num_frames, interval=50)
-
-    return ani
+    def show(self, save_filename=None):
+        ani = FuncAnimation(self.fig, self.update, frames=self.num_frames, interval=50)
+        if save_filename:
+            ani.save(save_filename, writer='ffmpeg')
+        else:
+            plt.show()
 
 
 if __name__ == '__main__':
@@ -60,9 +61,11 @@ if __name__ == '__main__':
     data2 = data_test.inputs_raw[50].T
     num_frames = min(data1.shape[0], data2.shape[0]) - 1
 
-    ani = plot_skeleton_animation(num_frames, data1, data2)
-    my_ani = ani
+    # ani = plot_skeleton_animation(num_frames, data1, data2)
+    # my_ani = ani
+    # plt.show()
+
+    viz = SkeletonVisualizer(num_frames, data1, data2)
+    ani = viz.show(save_filename='img/test_animation.gif')
     plt.show()
-
-
 
