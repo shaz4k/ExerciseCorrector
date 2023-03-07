@@ -41,9 +41,10 @@ def main(arg):
     scheduler = lr_scheduler.StepLR(optimizer, step_size=arg.step_size, gamma=0.2)
 
     # Initialise tensorboard if requested
-    start_tensorboard = input('Do you want to save Tensorboard? (y/n)\n')
-    if start_tensorboard == 'y':
-        arg.record = True
+    if not arg.record:
+        start_tensorboard = input('Do you want to save Tensorboard? (y/n)\n')
+        if start_tensorboard == 'y':
+            arg.record = True
 
     if arg.record:
         print('Tensorboard enabled')
@@ -90,8 +91,25 @@ def main(arg):
             with torch.no_grad():
                 te_l, te_acc = test_cnn(test_loader, model, writer, is_cuda=is_cuda, level=1)
             print(f'Test Loss: {te_l}\n,Test Accuracy:{te_acc}')
+            writer_test = SummaryWriter(f'{save_location}/test/{run_id}')
+            writer_test.add_scalar('Test Loss', te_l)
+            writer_test.add_scalar('Test Accuracy', tr_l)
+            writer_test.close()
         else:
             pass
+
+        save_model = input('Would you like to save the trained model? (y/n)\n')
+
+        if save_model == 'y':
+            filename = str(arg.datetime)
+            save_path = f'{save_location}/models'
+            if not os.path.exists(save_path):
+                os.makedirs(save_path)
+            torch.save(model.state_dict(), f'{save_path}/{filename}.pth')
+            print(f'Save successful\nFilename: {filename}.pth')
+        else:
+            pass
+
     else:
         pass
     sys.exit()
