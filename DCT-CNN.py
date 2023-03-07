@@ -15,8 +15,12 @@ from test import test_cnn
 
 
 def main(arg):
+    # Directory to save data too
+    save_location = 'runs/DCT-CNN-Classifier'
+
     # Check CUDA
     is_cuda = torch.cuda.is_available()
+
     try:
         print('Loading saved data...')
         with open(arg.processed_path, "rb") as f:
@@ -34,7 +38,7 @@ def main(arg):
     test_loader = DataLoader(dataset=data_test, batch_size=len(data_test))
 
     # Load model and move to CUDA device is possible
-    model = CNN_Classifier()
+    model = CNN_Classifier(in_channels=1)
 
     if is_cuda:
         model.cuda()
@@ -43,14 +47,21 @@ def main(arg):
     optimizer = torch.optim.Adam(model.parameters(), lr=arg.lr)
 
     # Define the learning rate scheduler
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=30, gamma=arg.gamma)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=arg.gamma)
 
-    if arg.record == True:
+    # Initialise tensorboard if requested
+    start_tensorboard = input('Do you want to save Tensorboard? (y/n)\n')
+    if start_tensorboard == 'y':
+        arg.record = True
+
+    if arg.record:
         print('Tensorboard enabled')
         run_id = arg.datetime
         print(f'Current run: {run_id}')
 
-        writer = SummaryWriter(f'runs/CNN_Classifier/train/{run_id}')
+        writer = SummaryWriter(f'{save_location}/train/{run_id}')
+
+        writer.add_text('Note', arg.note, 1)
 
         data_iter = iter(train_loader)
         _, example_input = next(data_iter)
@@ -94,7 +105,7 @@ def main(arg):
 
         if save_model == 'y':
             filename = str(arg.datetime)
-            save_path = f'runs/CNN_Classifier/models'
+            save_path = f'{save_location}/models'
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
             torch.save(model.state_dict(), f'{save_path}/{filename}.pth')
@@ -105,6 +116,7 @@ def main(arg):
 
     else:
         sys.exit()
+
 
 if __name__ == '__main__':
     torch.manual_seed(42)
