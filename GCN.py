@@ -143,23 +143,60 @@ def train_classifier(arg):
 
 
 def train_corrector(arg):
+    save_location = 'runs/GCN_Corrector'
+
+    # Check Cuda
+    is_cuda = torch.cuda.is_available()
+
     # Load or process the dataset
     print('Loading dataset..')
     data_train, data_test = load_dataset()
     print('Load complete.')
 
+    # Data Loader
     train_loader = DataLoader(dataset=data_train, batch_size=arg.batch_size, shuffle=True, drop_last=True)
     test_loader = DataLoader(dataset=data_test, batch_size=len(data_test))
 
     # Load model
     model = GCN_Corrector()
-    optimizer = torch.optim.Adam(model.parameters(), lr=arg.lr)
 
-    # Check Cuda
-    is_cuda = torch.cuda.is_available()
+    # Load model and move to CUDA device if possible
     if is_cuda:
         model.cuda()
 
+    # Optimizer
+    optimizer = torch.optim.Adam(model.parameters(), lr=arg.lr)
+
+    # Initialise tensorboard if requested
+    if not arg.record:
+        start_tensorboard = input('Do you want to save Tensorboard? (y/n)\n')
+        if start_tensorboard == 'y':
+            arg.record = True
+
+    if arg.record:
+        print('Tensorboard enabled')
+        run_id = arg.datetime
+        print(f'Current run: {run_id}')
+
+        writer = SummaryWriter(f'{save_location}/train/{run_id}')
+
+        # Save parameters
+        # save_parameters(arg, save_location)
+        data_iter = iter(train_loader)
+        _, example_input = next(data_iter)
+
+        if is_cuda:
+            example_input = example_input.float().cuda()
+        else:
+            example_input = example_input.float()
+
+        writer.add_graph(model, example_input)
+        writer.close()
+    else:
+        print('Tensorboard disabled')
+        writer = None
+
+    # Check start
     start_train = input('Do you want to train the GCN corrector? (y/n)\n')
 
     if start_train == 'y':
@@ -178,12 +215,21 @@ def train_corrector(arg):
             # sys.exit()
 
         else:
-            print('Testing aborted.')
-            # sys.exit()
+            pass
+
+        save_model = input('Would you like to save the trained model? (y/n)\n')
+        if save_model == 'y':
+            filename = str(arg.datetime)
+            save_path = f'{save_location}/models'
+            if not os.path.exists(save_path):
+                os.makedirs(save_path)
+            torch.save(model.state_dict(), f'{save_path}/{filename}.pth')
+            print(f'Save successful\nFilename: {filename}.pth')
+        else:
+            pass
 
     else:
         print('Training aborted.')
-        sys.exit()
 
     print('End.')
     sys.exit()
