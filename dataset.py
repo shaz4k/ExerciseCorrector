@@ -22,7 +22,7 @@ class EC3D(Dataset):
         if sets is None:
             sets = [[0, 1], [2], [3]]
         self.dct_n = dct_n
-        correct, other = load_data(data_path, sets[split], add_data=add_data)
+        correct, other, _, _ = load_data(data_path, sets[split], add_data=add_data)
         pairs = dtw_pairs(correct, other, is_cuda=is_cuda)
 
         self.targets_label = [i[1] for i in pairs]
