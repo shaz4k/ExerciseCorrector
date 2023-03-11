@@ -8,7 +8,7 @@ import sys
 import os
 
 from train import train_class, train_corr
-from test import test_class
+from test import test_class, test_corr
 from dataset import EC3D
 from models import Simple_GCN_Classifier, GCN_Corrector
 from utils.opt import Options
@@ -42,7 +42,13 @@ def load_dataset():
 def train_classifier(arg):
     save_location = 'runs/GCN-Classifier'
     # Load or process the dataset
-    data_train, data_test = load_dataset()
+    # data_train, data_test = load_dataset()
+
+    sets = [[0, 1, 2], [], [3]]
+    is_cuda = torch.cuda.is_available()
+    data_train = EC3D(arg.raw_data_path, sets=sets, split=0, is_cuda=is_cuda)
+    data_test = EC3D(arg.raw_data_path, sets=sets, split=2, is_cuda=is_cuda)
+
     print('Load complete.')
 
     train_loader = DataLoader(dataset=data_train, batch_size=arg.batch_size, shuffle=True, drop_last=True)
@@ -55,7 +61,7 @@ def train_classifier(arg):
     optimizer = torch.optim.Adam(model.parameters(), lr=arg.lr)
 
     # Define the learning rate scheduler
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=arg.gamma)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=arg.step_size, gamma=arg.gamma)
 
     # Check Cuda
     is_cuda = torch.cuda.is_available()
@@ -118,8 +124,11 @@ def train_classifier(arg):
 
             with torch.no_grad():
                 te_l, te_acc, _, _ = test_class(test_loader, model, is_cuda=is_cuda, level=1)
-
             print(f'Test Loss: {te_l}\n,Test Accuracy:{te_acc}')
+            if writer is not None:
+                writer.add_scalar('Classifier/Test Loss', te_l)
+                writer.add_scalar('Classifier/Test Accuracy', te_acc)
+                writer.close()
         else:
             pass
 
@@ -203,7 +212,7 @@ def train_corrector(arg):
         print('Start training...')
         with tqdm(range(arg.epoch), desc=f'Training model', unit="epoch") as tepoch:
             for epoch in tepoch:
-                tr_l = train_corr(train_loader, model, optimizer, is_cuda=is_cuda)
+                tr_l = train_corr(train_loader, model, optimizer, writer, epoch, is_cuda=is_cuda)
                 if (epoch + 1) % 10 == 0:
                     print(f'\nTraining_loss: {tr_l}')
         print('Training Complete.')
@@ -211,9 +220,11 @@ def train_corrector(arg):
         start_test = input('Do you want to test the GCN corrector? (y/n)\n')
         if start_test == 'y':
             print('Start testing...')
-            # tes the correction module
-            # sys.exit()
-
+            te_l, preds = test_corr(test_loader,  model, is_cuda=is_cuda)
+            print(f'Test Loss: {te_l}')
+            if writer is not None:
+                writer.add_scalar('Corrector/Test Loss', te_l)
+                writer.close()
         else:
             pass
 
@@ -245,7 +256,6 @@ if __name__ == '__main__':
     torch.cuda.set_device(0)
     print('GPU Index: {}'.format(torch.cuda.current_device()))
     available_models = ['(1) GCN Classifier', '(2) GCN Corrector', '(3) Combined GCN Classifier and Corrector']
-    # print('Model Options:\t' + "   ".join(str(x) for x in model_options))
     print(f'Available models: {available_models}')
     model_options = ['1', '2', '3']
 
