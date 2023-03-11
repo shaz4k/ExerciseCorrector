@@ -11,28 +11,36 @@ from utils.opt import Options
 from models import CNN_Classifier, CNN_Classifier_v2
 from train import train_cnn
 from test import test_cnn
+from visualisation import SkeletonVisualizer
 
 
-def main(arg):
+def main(arg, model_select):
+    save_location = 'runs/3D-CNN-Classifier_v2'
+    if model_select == 'Basic':
+        print('Training Basic CNN Classifier')
+        save_location = 'runs/3D-CNN-Classifier'
+        model = CNN_Classifier(in_channels=3)
+    if model_select == 'v2':
+        print('Training CNN Classifier v2')
+        save_location = 'runs/3D-CNN-Classifier_v2'
+        model = CNN_Classifier_v2(in_channels=3)
+
     # Check CUDA
     is_cuda = torch.cuda.is_available()
-    save_location = 'runs/3D-CNN-Classifier'
+    # Load model and move to CUDA device is possible
+    if is_cuda:
+        model.cuda()
 
     # Load raw data
+    print('Processing raw data...')
     sets = [[0, 1, 2], [], [3]]
-    data_train = EC3D_new(arg.raw_data_path, sets=sets, split=0, rep_3d=True, is_cuda=is_cuda)
-    data_test = EC3D_new(arg.raw_data_path, sets=sets, split=0, rep_3d=True, is_cuda=is_cuda)
+    data_train = EC3D_new(arg.raw_data_path, sets=sets, split=0, rep_3d=True, normalization='sample', is_cuda=is_cuda)
+    data_test = EC3D_new(arg.raw_data_path, sets=sets, split=2, rep_3d=True, normalization='sample', is_cuda=is_cuda)
     print('Load complete.')
 
     # Data Loader
     train_loader = DataLoader(dataset=data_train, batch_size=arg.batch_size, shuffle=True, drop_last=True)
     test_loader = DataLoader(dataset=data_test, batch_size=len(data_test))
-
-    # Load model and move to CUDA device is possible
-    # model = CNN_Classifier_v2(in_channels=3)
-    model = CNN_Classifier(in_channels=3)
-    if is_cuda:
-        model.cuda()
 
     # Optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=arg.lr)
@@ -89,12 +97,13 @@ def main(arg):
         start_test = input('Start testing? (y/n)\n')
         if start_test == 'y':
             with torch.no_grad():
-                te_l, te_acc = test_cnn(test_loader, model, writer, is_cuda=is_cuda, level=1)
-            print(f'Test Loss: {te_l}\n,Test Accuracy:{te_acc}')
-            writer_test = SummaryWriter(f'{save_location}/test/{run_id}')
-            writer_test.add_scalar('Test Loss', te_l)
-            writer_test.add_scalar('Test Accuracy', tr_l)
-            writer_test.close()
+                te_l, te_acc = test_cnn(test_loader, model, is_cuda=is_cuda, level=1)
+            print(f'Test Loss: {te_l}\nTest Accuracy:{te_acc}')
+
+            if writer is not None:
+                writer.add_scalar('Classifier/Test Loss', te_l)
+                writer.add_scalar('Classifier/Test Accuracy', te_acc)
+                writer.close()
         else:
             pass
 
@@ -112,6 +121,7 @@ def main(arg):
 
     else:
         pass
+    print('End.')
     sys.exit()
 
 
@@ -132,5 +142,18 @@ def save_parameters(arg, save_location):
 if __name__ == '__main__':
     torch.manual_seed(42)
     torch.cuda.set_device(0)
-    arg = Options().parse()
-    main(arg)
+    available_models = ['(1) Basic CNN Classifier', '(2) CNN Classifier v2']
+    print(f'Available models: {available_models}')
+    model_options = ['1', '2']
+    while True:
+        model_version = input('Input the number of the model you would like to train: ')
+        if model_version in model_options:
+            arg = Options().parse()
+            if model_version == '1':
+                model_select = 'Basic'
+                main(arg, model_select)
+            if model_version == '2':
+                model_select = 'v2'
+                main(arg, model_select)
+
+        print('Please input a valid number!')
