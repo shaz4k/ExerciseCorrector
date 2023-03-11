@@ -51,7 +51,9 @@ class EC3D(Dataset):
 
 
 class EC3D_new(Dataset):
-    def __init__(self, data_path, dct_n=25, split=0, sets=None, rep_3d=False, is_cuda=False, add_data=None):
+    def __init__(self, data_path, dct_n=25, split=0, sets=None, rep_dct=False, rep_3d=False, normalization=False,
+                 is_cuda=False,
+                 add_data=None):
         if sets is None:
             sets = [[0, 1], [2], [3]]
 
@@ -60,18 +62,34 @@ class EC3D_new(Dataset):
         self.targets_label = [i[1] for i in pairs]
         self.inputs_label = [i[0] for i in pairs]
 
-        targets = [correct[i] for i in self.targets_label]
-        inputs_raw = [other[i] for i in self.inputs_label]
+        if rep_3d:
+            targets = [correct[i] for i in self.targets_label]
+            inputs_raw = [other[i] for i in self.inputs_label]
 
-        # Reshape for CNN input = [batch, channels, height, width]
-        self.targets = [arr.transpose((1, 2, 0)) for arr in targets]
-        self.inputs_raw = [arr.transpose((1, 2, 0)) for arr in inputs_raw]
+            # Reshape for CNN input = [batch, channels, height, width]
+            self.targets_raw = [arr.transpose((1, 2, 0)) for arr in targets]
+            self.inputs_raw = [arr.transpose((1, 2, 0)) for arr in inputs_raw]
+            self.inputs = resample(self.inputs_raw, target_frames=24)
+            self.targets = resample(self.targets_raw, target_frames=24)
+
+            if normalization:
+                self.inputs = normalise(self.inputs, normalization)
+                self.targets = normalise(self.targets, normalization)
+
+        if rep_dct:
+            self.targets = [correct[i] for i in self.targets_label]
+            self.inputs_raw = [other[i] for i in self.inputs_label]
+
+            self.dct_n = dct_n
+            self.inputs = [dct_2d(torch.from_numpy(x))[:, :self.dct_n].numpy() if x.shape[1] >= self.dct_n else
+                           dct_2d(torch.nn.ZeroPad2d((0, self.dct_n - x.shape[1], 0, 0))(torch.from_numpy(x))).numpy()
+                           for x in self.inputs_raw]
+
+            # reshape
+            if rep_dct == 3:
+                self.inputs = [arr.reshape(3, 19, 25) for arr in self.inputs]
 
         self.batch_ids = list(range(len(self.inputs_raw)))
-
-        # temp
-        self.inputs = resample(self.inputs_raw, target_frames=24)
-        stop=1
 
     def __len__(self):
         return np.shape(self.inputs)[0]
@@ -80,30 +98,39 @@ class EC3D_new(Dataset):
         return self.batch_ids[index], self.inputs[index]
 
 
-def normalise(data):
-    # normalise
-    normalised_data = []
-    for sample in data:
-        v_min = np.min(sample, axis=2, keepdims=True)
-        v_max = np.max(sample, axis=2, keepdims=True)
-        num = np.subtract(sample, v_min)
-        den = np.subtract(v_max, v_min)
-        normalised = np.divide(num, den)
-        normalised_data.append(normalised)
+def normalise(data, normalization):
+    normalised_list = []
 
-    return normalised_data
+    if normalization == 'dataset':
+        max_val = np.max([np.max(sample) for sample in data])
+        min_val = np.min([np.min(sample) for sample in data])
+
+        for sample in data:
+            normalised_data = (2.0 * (sample - min_val) / (max_val - min_val)) - 1.0
+            normalised_list.append(normalised_data)
+
+    if normalization == 'sample':
+        for sample in data:
+            max_val = np.max(sample)
+            min_val = np.min(sample)
+            normalised_data = (2.0 * (sample - min_val) / (max_val - min_val)) - 1.0
+            normalised_list.append(normalised_data)
+
+    return normalised_list
+
 
 def resample(data, target_frames):
     resampled_data = []
     for i, array in enumerate(data):
         num_frames = array.shape[2]
         if num_frames > target_frames:
-            step_size = num_frames//target_frames
+            step_size = num_frames // target_frames
             new_array = array[:, :, range(0, num_frames, step_size)][:, :, :target_frames]
         else:
             new_array = array
         resampled_data.append(new_array)
     return resampled_data
+
 
 def load_data(data_path, subs, rep_3d=False, add_data=None, is_cuda=False):
     with open(data_path, "rb") as f:
@@ -150,8 +177,6 @@ def load_data(data_path, subs, rep_3d=False, add_data=None, is_cuda=False):
         correct = {k: poses_gt[v] for k, v in lab1.items()}
         other = {k: poses[v] for k, v in labnot1.items()}
 
-        # Normalise skeletons
-
         # Find min frames (first dim)
         corr_min = np.min([v.shape[0] for k, v in lab1.items()])
         other_min = np.min([v.shape[0] for k, v in labnot1.items()])
@@ -160,12 +185,16 @@ def load_data(data_path, subs, rep_3d=False, add_data=None, is_cuda=False):
         # Find dtw pairs using flattened representation
         correct_2d = {k: poses_gt[v].reshape(-1, poses_gt.shape[1] * poses_gt.shape[2]).T for k, v in lab1.items()}
         other_2d = {k: poses[v].reshape(-1, poses.shape[1] * poses.shape[2]).T for k, v in labnot1.items()}
+        print('Calculating DTW pairs..')
         pairs = dtw_pairs(correct_2d, other_2d, is_cuda=is_cuda)
     else:
         correct = {k: poses_gt[v].reshape(-1, poses_gt.shape[1] * poses_gt.shape[2]).T for k, v in lab1.items()}
         other = {k: poses[v].reshape(-1, poses.shape[1] * poses.shape[2]).T for k, v in labnot1.items()}
         min_frames = None
+        print('Calculating DTW pairs..')
         pairs = dtw_pairs(correct, other, is_cuda=is_cuda)
+
+    print('Pairing complete.')
 
     return correct, other, pairs, min_frames
 
