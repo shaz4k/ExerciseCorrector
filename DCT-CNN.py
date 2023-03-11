@@ -8,29 +8,28 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from utils.opt import Options
-from dataset import EC3D
+from dataset import EC3D, EC3D_new
 from models import CNN_Classifier
 from train import train_cnn
 from test import test_cnn
 
 
 def main(arg):
-    # Directory to save data too
-    save_location = 'runs/DCT-CNN-Classifier'
-
     # Check CUDA
     is_cuda = torch.cuda.is_available()
 
-    try:
-        print('Loading saved data...')
-        with open(arg.processed_path, "rb") as f:
-            data = pickle.load(f)
-        data_train = data['train']
-        data_test = data['test']
-    except FileNotFoundError:
-        print('Processing raw data.')
-        sets = [[0, 1, 2], [], [3]]
-        data_train = EC3D(arg.raw_data_path, sets=sets, split=0, is_cuda=is_cuda)
+    in_channels = 3
+    # Directory to save data too
+    if in_channels == 1:
+        save_location = 'runs/DCT-CNN-Classifier-1CH'
+    else:
+        save_location = 'runs/DCT-CNN-Classifier-3CH'
+
+    # Load raw data
+    print('Processing raw data...')
+    sets = [[0, 1, 2], [], [3]]
+    data_train = EC3D_new(arg.raw_data_path, sets=sets, split=0, rep_dct=in_channels, rep_3d=False, is_cuda=is_cuda)
+    data_test = EC3D_new(arg.raw_data_path, sets=sets, split=2, rep_dct=in_channels, rep_3d=False, is_cuda=is_cuda)
     print('Load complete.')
 
     # Data Loader
@@ -38,7 +37,7 @@ def main(arg):
     test_loader = DataLoader(dataset=data_test, batch_size=len(data_test))
 
     # Load model and move to CUDA device is possible
-    model = CNN_Classifier(in_channels=1)
+    model = CNN_Classifier(in_channels=in_channels)
 
     if is_cuda:
         model.cuda()
@@ -60,8 +59,6 @@ def main(arg):
         print(f'Current run: {run_id}')
 
         writer = SummaryWriter(f'{save_location}/train/{run_id}')
-
-        writer.add_text('Note', arg.note, 1)
 
         data_iter = iter(train_loader)
         _, example_input = next(data_iter)
@@ -95,9 +92,13 @@ def main(arg):
 
         if start_train == 'y':
             with torch.no_grad():
-                te_l, te_acc = test_cnn(test_loader, model, writer, is_cuda=is_cuda, level=1)
+                te_l, te_acc = test_cnn(test_loader, model, is_cuda=is_cuda, level=1)
 
             print(f'Test Loss: {te_l}\nTest Accuracy:{te_acc}')
+            if writer is not None:
+                writer.add_scalar('Classifier/Test Loss', te_l)
+                writer.add_scalar('Classifier/Test Accuracy', te_acc)
+                writer.close()
         else:
             pass
 
