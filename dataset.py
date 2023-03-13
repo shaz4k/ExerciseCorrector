@@ -22,7 +22,7 @@ class EC3D(Dataset):
         if sets is None:
             sets = [[0, 1], [2], [3]]
         self.dct_n = dct_n
-        correct, other, _, _ = load_data(data_path, sets[split], add_data=add_data)
+        _, _, correct, other, _ = load_data(data_path, sets[split], add_data=add_data)
         pairs = dtw_pairs(correct, other, is_cuda=is_cuda)
 
         self.targets_label = [i[1] for i in pairs]
@@ -31,6 +31,7 @@ class EC3D(Dataset):
         self.targets = [correct[i] for i in self.targets_label]
         self.inputs_raw = [other[i] for i in self.inputs_label]
 
+        print('Calculating DCT co-efficients')
         self.inputs = [dct_2d(torch.from_numpy(x))[:, :self.dct_n].numpy() if x.shape[1] >= self.dct_n else
                        dct_2d(torch.nn.ZeroPad2d((0, self.dct_n - x.shape[1], 0, 0))(torch.from_numpy(x))).numpy()
                        for x in self.inputs_raw]
@@ -38,10 +39,6 @@ class EC3D(Dataset):
         self.node_n = np.shape(self.inputs_raw[0])[0]
         self.batch_ids = list(range(len(self.inputs_raw)))
         self.name = "EC3D"
-
-        # pdb.set_trace()
-        # with open('data/DTW_Method.pickle', 'wb') as f:
-        #     pickle.dump({'targets':self.targets,'tar_label':self.targets_label,'inputs':self.inputs,'inputs_raw':self.inputs_raw, 'inputs_label': self.inputs_label}, f)
 
     def __len__(self):
         return np.shape(self.inputs)[0]
@@ -57,18 +54,18 @@ class EC3D_new(Dataset):
         if sets is None:
             sets = [[0, 1], [2], [3]]
 
-        correct, other, pairs, min_frames = load_data(data_path, sets[split], rep_3d=rep_3d, add_data=add_data)
-
+        correct, other, correct_2d, other_2d, min_frames = load_data(data_path, sets[split], rep_3d=rep_3d,
+                                                                     add_data=add_data)
+        # corr shape [19*3, frames]
+        pairs = dtw_pairs(correct_2d, other_2d, is_cuda=is_cuda)
         self.targets_label = [i[1] for i in pairs]
         self.inputs_label = [i[0] for i in pairs]
 
         if rep_3d:
-            targets = [correct[i] for i in self.targets_label]
-            inputs_raw = [other[i] for i in self.inputs_label]
+            self.targets_raw = [correct[i] for i in self.targets_label]
+            self.inputs_raw = [other[i] for i in self.inputs_label]
 
-            # Reshape for CNN input = [batch, channels, height, width]
-            self.targets_raw = [arr.transpose((1, 2, 0)) for arr in targets]
-            self.inputs_raw = [arr.transpose((1, 2, 0)) for arr in inputs_raw]
+            # Resample
             self.inputs = resample(self.inputs_raw, target_frames=24)
             self.targets = resample(self.targets_raw, target_frames=24)
 
@@ -122,10 +119,10 @@ def normalise(data, normalization):
 def resample(data, target_frames):
     resampled_data = []
     for i, array in enumerate(data):
-        num_frames = array.shape[2]
+        num_frames = array.shape[0]
         if num_frames > target_frames:
             step_size = num_frames // target_frames
-            new_array = array[:, :, range(0, num_frames, step_size)][:, :, :target_frames]
+            new_array = array[range(0, num_frames, step_size)][:target_frames]
         else:
             new_array = array
         resampled_data.append(new_array)
@@ -174,29 +171,43 @@ def load_data(data_path, subs, rep_3d=False, add_data=None, is_cuda=False):
     poses_gt = data_gt['poses'][:, :, joints]
 
     if rep_3d:
-        correct = {k: poses_gt[v] for k, v in lab1.items()}
-        other = {k: poses[v] for k, v in labnot1.items()}
+        # shape [frames, 19, 3]
+        correct = {k: poses_gt[v].transpose(0, 2, 1) for k, v in lab1.items()}
+        other = {k: poses[v].transpose(0, 2, 1) for k, v in labnot1.items()}
 
         # Find min frames (first dim)
         corr_min = np.min([v.shape[0] for k, v in lab1.items()])
         other_min = np.min([v.shape[0] for k, v in labnot1.items()])
         min_frames = min(corr_min, other_min)
 
-        # Find dtw pairs using flattened representation
+        for k, v in correct.items():
+            if k[0] == 'Plank':
+                data1 = v[:, :, [0, 2]]
+                data2 = -v[:, :, 1]
+                data2 = np.expand_dims(data2, axis=-1)
+                corrected = np.dstack((data1, data2))
+                correct.update({k:corrected})
+
+        for k, v in other.items():
+            if k[0] == 'Plank':
+                data1 = v[:, :, [0, 2]]
+                data2 = -v[:, :, 1]
+                data2 = np.expand_dims(data2, axis=-1)
+                corrected = np.dstack((data1, data2))
+                other.update({k:corrected})
+        # Flatten
+        # correct_2d = {k: v.transpose(1, 2, 0).reshape(v.shape[0]*v.shape[1]) for k, v in correct.items()}
+        correct_2d = {k: v.reshape(-1, v.shape[1] * v.shape[2]).T for k, v in correct.items()}
+        other_2d = {k: v.reshape(-1, v.shape[1] * v.shape[2]).T for k, v in other.items()}
+
+    else:
+        correct = None
+        other = None
+        min_frames = None
         correct_2d = {k: poses_gt[v].reshape(-1, poses_gt.shape[1] * poses_gt.shape[2]).T for k, v in lab1.items()}
         other_2d = {k: poses[v].reshape(-1, poses.shape[1] * poses.shape[2]).T for k, v in labnot1.items()}
-        print('Calculating DTW pairs..')
-        pairs = dtw_pairs(correct_2d, other_2d, is_cuda=is_cuda)
-    else:
-        correct = {k: poses_gt[v].reshape(-1, poses_gt.shape[1] * poses_gt.shape[2]).T for k, v in lab1.items()}
-        other = {k: poses[v].reshape(-1, poses.shape[1] * poses.shape[2]).T for k, v in labnot1.items()}
-        min_frames = None
-        print('Calculating DTW pairs..')
-        pairs = dtw_pairs(correct, other, is_cuda=is_cuda)
 
-    print('Pairing complete.')
-
-    return correct, other, pairs, min_frames
+    return correct, other, correct_2d, other_2d, min_frames
 
 
 def dtw_pairs(correct, incorrect, is_cuda=False):
