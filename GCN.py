@@ -39,15 +39,30 @@ def load_dataset():
     return data_train, data_test
 
 
+def save_checkpoint(args, model, optimizer, epoch, save_location):
+    checkpoint_dir = f'{save_location}/checkpoints'
+    if not os.path.exists(checkpoint_dir):
+        os.makedirs(checkpoint_dir)
+
+    checkpoint_path = f'{checkpoint_dir}/{args.datetime}_epoch{epoch}.pt'
+    checkpoint = {
+        'args': args,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'epoch': epoch,
+    }
+    torch.save(checkpoint, checkpoint_path)
+
+
 def train_classifier(arg):
     save_location = 'runs/GCN-Classifier'
     # Load or process the dataset
-    # data_train, data_test = load_dataset()
+    data_train, data_test = load_dataset()
 
-    sets = [[0, 1, 2], [], [3]]
-    is_cuda = torch.cuda.is_available()
-    data_train = EC3D(arg.raw_data_path, sets=sets, split=0, is_cuda=is_cuda)
-    data_test = EC3D(arg.raw_data_path, sets=sets, split=2, is_cuda=is_cuda)
+    # sets = [[0, 1, 2], [], [3]]
+    # is_cuda = torch.cuda.is_available()
+    # data_train = EC3D(arg.raw_data_path, sets=sets, split=0, is_cuda=is_cuda)
+    # data_test = EC3D(arg.raw_data_path, sets=sets, split=2, is_cuda=is_cuda)
 
     print('Load complete.')
 
@@ -134,12 +149,7 @@ def train_classifier(arg):
 
         save_model = input('Would you like to save the trained model? (y/n)\n')
         if save_model == 'y':
-            filename = str(arg.datetime)
-            save_path = f'{save_location}/models'
-            if not os.path.exists(save_path):
-                os.makedirs(save_path)
-            torch.save(model.state_dict(), f'{save_path}/{filename}.pth')
-            print(f'Save successful\nFilename: {filename}.pth')
+            save_checkpoint(arg, model, optimizer, epoch, save_location)
         else:
             pass
 
@@ -220,7 +230,7 @@ def train_corrector(arg):
         start_test = input('Do you want to test the GCN corrector? (y/n)\n')
         if start_test == 'y':
             print('Start testing...')
-            te_l, preds = test_corr(test_loader,  model, is_cuda=is_cuda)
+            te_l, preds = test_corr(test_loader, model, is_cuda=is_cuda)
             print(f'Test Loss: {te_l}')
             if writer is not None:
                 writer.add_scalar('Corrector/Test Loss', te_l)
@@ -230,12 +240,7 @@ def train_corrector(arg):
 
         save_model = input('Would you like to save the trained model? (y/n)\n')
         if save_model == 'y':
-            filename = str(arg.datetime)
-            save_path = f'{save_location}/models'
-            if not os.path.exists(save_path):
-                os.makedirs(save_path)
-            torch.save(model.state_dict(), f'{save_path}/{filename}.pth')
-            print(f'Save successful\nFilename: {filename}.pth')
+            save_checkpoint(arg, model, optimizer, epoch, save_location)
         else:
             pass
 
