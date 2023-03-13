@@ -61,8 +61,6 @@ def main(arg, model_select):
 
         writer = SummaryWriter(f'{save_location}/train/{run_id}')
 
-        # Save parameters
-        save_parameters(arg, save_location)
         # Get example data
         data_iter = iter(train_loader)
         _, example_input = next(data_iter)
@@ -108,14 +106,8 @@ def main(arg, model_select):
             pass
 
         save_model = input('Would you like to save the trained model? (y/n)\n')
-
         if save_model == 'y':
-            filename = str(arg.datetime)
-            save_path = f'{save_location}/models'
-            if not os.path.exists(save_path):
-                os.makedirs(save_path)
-            torch.save(model.state_dict(), f'{save_path}/{filename}.pth')
-            print(f'Save successful\nFilename: {filename}.pth')
+            save_checkpoint(arg, model, optimizer, epoch, save_location)
         else:
             pass
 
@@ -125,18 +117,19 @@ def main(arg, model_select):
     sys.exit()
 
 
-def save_parameters(arg, save_location):
-    parameters_dir = f'{save_location}/parameters'
-    if not os.path.exists(parameters_dir):
-        os.makedirs(parameters_dir)
+def save_checkpoint(args, model, optimizer, epoch, save_location):
+    checkpoint_dir = f'{save_location}/checkpoints'
+    if not os.path.exists(checkpoint_dir):
+        os.makedirs(checkpoint_dir)
 
-    file_path = f'{parameters_dir}/{arg.datetime}.txt'
-    with open(file_path, 'w') as f:
-        f.write(f"Learning rate: {arg.lr}\n")
-        f.write(f"Batch size: {arg.batch_size}\n")
-        f.write(f"Number of epochs: {arg.epoch}\n")
-        f.write(f"Step size: {arg.step_size}\n")
-        f.write(f"Gamma: {arg.gamma}\n")
+    checkpoint_path = f'{checkpoint_dir}/{args.datetime}_epoch{epoch}.pt'
+    checkpoint = {
+        'args': args,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'epoch': epoch,
+    }
+    torch.save(checkpoint, checkpoint_path)
 
 
 if __name__ == '__main__':
