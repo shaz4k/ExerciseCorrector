@@ -14,6 +14,30 @@ from train import train_cnn
 from test import test_cnn
 
 
+def load_dataset():
+    temp_path = 'data/EC3D/tmp_DCT_3CH.pickle'
+    try:
+        print('Loading saved data.')
+        with open(temp_path, "rb") as f:
+            data = pickle.load(f)
+        data_train = data['train']
+        data_test = data['test']
+
+    except FileNotFoundError:
+        print('File Not Found: Processing raw data...')
+        sets = [[0, 1, 2], [], [3]]
+        is_cuda = torch.cuda.is_available()
+        data_train = EC3D_new(arg.raw_data_path, sets=sets, split=0, rep_dct=3, rep_3d=False, normalization='sample',
+                              is_cuda=is_cuda)
+        data_test = EC3D_new(arg.raw_data_path, sets=sets, split=2, rep_dct=3, rep_3d=False, normalization='sample',
+                             is_cuda=is_cuda)
+        print('Writing processed data...')
+        with open(temp_path, 'wb') as f:
+            pickle.dump({'train': data_train, 'test': data_test}, f)
+        print('Complete')
+
+    return data_train, data_test
+
 def main(arg):
     # Check CUDA
     is_cuda = torch.cuda.is_available()
@@ -25,12 +49,13 @@ def main(arg):
     else:
         save_location = 'runs/DCT-CNN-Classifier-3CH'
 
-    # Load raw data
-    print('Processing raw data...')
-    sets = [[0, 1, 2], [], [3]]
-    data_train = EC3D_new(arg.raw_data_path, sets=sets, split=0, rep_dct=in_channels, rep_3d=False, is_cuda=is_cuda)
-    data_test = EC3D_new(arg.raw_data_path, sets=sets, split=2, rep_dct=in_channels, rep_3d=False, is_cuda=is_cuda)
-    print('Load complete.')
+    # Load or process data
+    data_train, data_test = load_dataset()
+    # print('Processing raw data...')
+    # sets = [[0, 1, 2], [], [3]]
+    # data_train = EC3D_new(arg.raw_data_path, sets=sets, split=0, rep_dct=in_channels, rep_3d=False, is_cuda=is_cuda)
+    # data_test = EC3D_new(arg.raw_data_path, sets=sets, split=2, rep_dct=in_channels, rep_3d=False, is_cuda=is_cuda)
+    # print('Load complete.')
 
     # Data Loader
     train_loader = DataLoader(dataset=data_train, batch_size=arg.batch_size, shuffle=True, drop_last=True)
@@ -60,16 +85,16 @@ def main(arg):
 
         writer = SummaryWriter(f'{save_location}/train/{run_id}')
 
-        data_iter = iter(train_loader)
-        _, example_input = next(data_iter)
-
-        if is_cuda:
-            example_input = example_input.float().cuda()
-        else:
-            example_input = example_input.float()
-
-        writer.add_graph(model, example_input)
-        writer.close()
+        # data_iter = iter(train_loader)
+        # _, example_input = next(data_iter)
+        #
+        # if is_cuda:
+        #     example_input = example_input.float().cuda()
+        # else:
+        #     example_input = example_input.float()
+        #
+        # writer.add_graph(model, example_input)
+        # writer.close()
     else:
         print('Tensorboard disabled')
         writer = None
@@ -105,18 +130,28 @@ def main(arg):
         save_model = input('Would you like to save the trained model? (y/n)\n')
 
         if save_model == 'y':
-            filename = str(arg.datetime)
-            save_path = f'{save_location}/models'
-            if not os.path.exists(save_path):
-                os.makedirs(save_path)
-            torch.save(model.state_dict(), f'{save_path}/{filename}.pth')
-            print(f'Save successful\nFilename: {filename}.pth')
+            save_checkpoint(arg, model, optimizer, epoch, save_location)
         else:
             pass
 
 
     else:
         sys.exit()
+
+
+def save_checkpoint(args, model, optimizer, epoch, save_location):
+    checkpoint_dir = f'{save_location}/checkpoints'
+    if not os.path.exists(checkpoint_dir):
+        os.makedirs(checkpoint_dir)
+
+    checkpoint_path = f'{checkpoint_dir}/{args.datetime}.pt'
+    checkpoint = {
+        'args': args,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'epoch': epoch,
+    }
+    torch.save(checkpoint, checkpoint_path)
 
 
 if __name__ == '__main__':
