@@ -49,19 +49,21 @@ class EC3D(Dataset):
 
 class EC3D_new(Dataset):
     def __init__(self, data_path, dct_n=25, split=0, sets=None, rep_dct=False, rep_3d=False, normalization=False,
-                 is_cuda=False,
-                 add_data=None):
+                 is_cuda=False, add_data=None):
         if sets is None:
             sets = [[0, 1], [2], [3]]
 
-        correct, other, correct_2d, other_2d, min_frames = load_data(data_path, sets[split], rep_3d=rep_3d,
+        self.rep_3d = rep_3d
+        self.rep_dct = rep_dct
+
+        correct, other, correct_2d, other_2d, min_frames = load_data(data_path, sets[split], rep_3d=self.rep_3d,
                                                                      add_data=add_data)
         # corr shape [19*3, frames]
         pairs = dtw_pairs(correct_2d, other_2d, is_cuda=is_cuda)
         self.targets_label = [i[1] for i in pairs]
         self.inputs_label = [i[0] for i in pairs]
 
-        if rep_3d:
+        if self.rep_3d:
             self.targets_raw = [correct[i] for i in self.targets_label]
             self.inputs_raw = [other[i] for i in self.inputs_label]
 
@@ -73,9 +75,9 @@ class EC3D_new(Dataset):
                 self.inputs = normalise(self.inputs, normalization)
                 self.targets = normalise(self.targets, normalization)
 
-        if rep_dct:
-            self.targets = [correct[i] for i in self.targets_label]
-            self.inputs_raw = [other[i] for i in self.inputs_label]
+        if self.rep_dct:
+            self.targets_raw = [correct_2d[i] for i in self.targets_label]
+            self.inputs_raw = [other_2d[i] for i in self.inputs_label]
 
             self.dct_n = dct_n
             self.inputs = [dct_2d(torch.from_numpy(x))[:, :self.dct_n].numpy() if x.shape[1] >= self.dct_n else
@@ -83,7 +85,7 @@ class EC3D_new(Dataset):
                            for x in self.inputs_raw]
 
             # reshape
-            if rep_dct == 3:
+            if self.rep_dct == 3:
                 self.inputs = [arr.reshape(3, 19, 25) for arr in self.inputs]
 
         self.batch_ids = list(range(len(self.inputs_raw)))
@@ -91,8 +93,32 @@ class EC3D_new(Dataset):
     def __len__(self):
         return np.shape(self.inputs)[0]
 
-    def __getitem__(self, index):
-        return self.batch_ids[index], self.inputs[index]
+    def __getitem__(self, idx):
+        if self.rep_3d:
+            return self.batch_ids[idx], self.inputs[idx]
+        else:
+            sample = self.inputs[idx]
+            num_frames, num_joints, _ = sample.shape
+
+            spatial_data = np.zeros((num_frames, num_joints, num_joints))
+            temporal_data = sample
+
+            for frame_idx in range(num_frames):
+                frame_data = sample[frame_idx]
+                spatial_data[frame_idx] = self.compute_pairwise_distances(frame_data)
+
+            return self.batch_ids[idx], spatial_data, temporal_data
+
+        # return self.batch_ids[idx], self.inputs[idx]
+
+    @staticmethod
+    def compute_pairwise_distances(data):
+        num_joints = data.shape[0]
+        pairwise_distances = np.zeros((num_joints, num_joints))
+        for i in range(num_joints):
+            for j in range(num_joints):
+                pairwise_distances[i, j] = np.linalg.norm(data[i] - data[j])
+        return pairwise_distances
 
 
 def normalise(data, normalization):
@@ -170,42 +196,33 @@ def load_data(data_path, subs, rep_3d=False, add_data=None, is_cuda=False):
     poses = data['poses'][:, :, joints]
     poses_gt = data_gt['poses'][:, :, joints]
 
-    if rep_3d:
-        # shape [frames, 19, 3]
-        correct = {k: poses_gt[v].transpose(0, 2, 1) for k, v in lab1.items()}
-        other = {k: poses[v].transpose(0, 2, 1) for k, v in labnot1.items()}
+    # shape [frames, 19, 3]
+    correct = {k: poses_gt[v].transpose(0, 2, 1) for k, v in lab1.items()}
+    other = {k: poses[v].transpose(0, 2, 1) for k, v in labnot1.items()}
 
-        # Find min frames (first dim)
-        corr_min = np.min([v.shape[0] for k, v in lab1.items()])
-        other_min = np.min([v.shape[0] for k, v in labnot1.items()])
-        min_frames = min(corr_min, other_min)
+    # Find min frames (first dim)
+    corr_min = np.min([v.shape[0] for k, v in lab1.items()])
+    other_min = np.min([v.shape[0] for k, v in labnot1.items()])
+    min_frames = min(corr_min, other_min)
 
-        for k, v in correct.items():
-            if k[0] == 'Plank':
-                data1 = v[:, :, [0, 2]]
-                data2 = -v[:, :, 1]
-                data2 = np.expand_dims(data2, axis=-1)
-                corrected = np.dstack((data1, data2))
-                correct.update({k:corrected})
+    for k, v in correct.items():
+        if k[0] == 'Plank':
+            data1 = v[:, :, [0, 2]]
+            data2 = -v[:, :, 1]
+            data2 = np.expand_dims(data2, axis=-1)
+            corrected = np.dstack((data1, data2))
+            correct.update({k: corrected})
 
-        for k, v in other.items():
-            if k[0] == 'Plank':
-                data1 = v[:, :, [0, 2]]
-                data2 = -v[:, :, 1]
-                data2 = np.expand_dims(data2, axis=-1)
-                corrected = np.dstack((data1, data2))
-                other.update({k:corrected})
-        # Flatten
-        # correct_2d = {k: v.transpose(1, 2, 0).reshape(v.shape[0]*v.shape[1]) for k, v in correct.items()}
-        correct_2d = {k: v.reshape(-1, v.shape[1] * v.shape[2]).T for k, v in correct.items()}
-        other_2d = {k: v.reshape(-1, v.shape[1] * v.shape[2]).T for k, v in other.items()}
-
-    else:
-        correct = None
-        other = None
-        min_frames = None
-        correct_2d = {k: poses_gt[v].reshape(-1, poses_gt.shape[1] * poses_gt.shape[2]).T for k, v in lab1.items()}
-        other_2d = {k: poses[v].reshape(-1, poses.shape[1] * poses.shape[2]).T for k, v in labnot1.items()}
+    for k, v in other.items():
+        if k[0] == 'Plank':
+            data1 = v[:, :, [0, 2]]
+            data2 = -v[:, :, 1]
+            data2 = np.expand_dims(data2, axis=-1)
+            corrected = np.dstack((data1, data2))
+            other.update({k: corrected})
+    # Flatten
+    correct_2d = {k: v.reshape(-1, v.shape[1] * v.shape[2]).T for k, v in correct.items()}
+    other_2d = {k: v.reshape(-1, v.shape[1] * v.shape[2]).T for k, v in other.items()}
 
     return correct, other, correct_2d, other_2d, min_frames
 
