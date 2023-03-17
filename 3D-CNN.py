@@ -3,6 +3,10 @@ import torch.optim.lr_scheduler as lr_scheduler
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from torchviz import make_dot
+import random
+import numpy as np
+import pickle
 import sys
 import os
 
@@ -11,7 +15,31 @@ from utils.opt import Options
 from models import CNN_Classifier, CNN_Classifier_v2
 from train import train_cnn
 from test import test_cnn
-from visualisation import SkeletonVisualizer
+
+
+def load_dataset():
+    temp_path = 'data/EC3D/tmp_3d.pickle'
+    try:
+        print('Loading saved data.')
+        with open(temp_path, "rb") as f:
+            data = pickle.load(f)
+        data_train = data['train']
+        data_test = data['test']
+
+    except FileNotFoundError:
+        print('File Not Found: Processing raw data...')
+        sets = [[0, 1, 2], [], [3]]
+        is_cuda = torch.cuda.is_available()
+        data_train = EC3D_new(arg.raw_data_path, sets=sets, split=0, rep_3d=True, normalization='sample',
+                              is_cuda=is_cuda)
+        data_test = EC3D_new(arg.raw_data_path, sets=sets, split=2, rep_3d=True, normalization='sample',
+                             is_cuda=is_cuda)
+        print('Writing processed data...')
+        with open(temp_path, 'wb') as f:
+            pickle.dump({'train': data_train, 'test': data_test}, f)
+        print('Complete')
+
+    return data_train, data_test
 
 
 def main(arg, model_select):
@@ -32,11 +60,12 @@ def main(arg, model_select):
         model.cuda()
 
     # Load raw data
-    print('Processing raw data...')
-    sets = [[0, 1, 2], [], [3]]
-    data_train = EC3D_new(arg.raw_data_path, sets=sets, split=0, rep_3d=True, normalization='sample', is_cuda=is_cuda)
-    data_test = EC3D_new(arg.raw_data_path, sets=sets, split=2, rep_3d=True, normalization='sample', is_cuda=is_cuda)
-    print('Load complete.')
+    data_train, data_test = load_dataset()
+    # print('Processing raw data...')
+    # sets = [[0, 1, 2], [], [3]]
+    # data_train = EC3D_new(arg.raw_data_path, sets=sets, split=0, rep_3d=True, normalization='sample', is_cuda=is_cuda)
+    # data_test = EC3D_new(arg.raw_data_path, sets=sets, split=2, rep_3d=True, normalization='sample', is_cuda=is_cuda)
+    # print('Load complete.')
 
     # Data Loader
     train_loader = DataLoader(dataset=data_train, batch_size=arg.batch_size, shuffle=True, drop_last=True)
@@ -46,7 +75,7 @@ def main(arg, model_select):
     optimizer = torch.optim.Adam(model.parameters(), lr=arg.lr)
 
     # Define the learning rate scheduler
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=arg.step_size, gamma=0.2)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=arg.step_size, gamma=arg.gamma)
 
     # Initialise tensorboard if requested
     if not arg.record:
@@ -62,16 +91,24 @@ def main(arg, model_select):
         writer = SummaryWriter(f'{save_location}/train/{run_id}')
 
         # Get example data
-        data_iter = iter(train_loader)
-        _, example_input = next(data_iter)
+        # data_iter = iter(train_loader)
+        # _, example_input = next(data_iter)
 
-        if is_cuda:
-            example_input = example_input.float().cuda()
-        else:
-            example_input = example_input.float()
-
-        writer.add_graph(model, example_input)
-        writer.close()
+        # if is_cuda:
+        #     example_input = example_input.permute(0, 3, 2, 1)
+        #     example_input = example_input.float().cuda()
+        # else:
+        #     example_input = example_input.permute(0, 3, 2, 1)
+        #     example_input = example_input.float()
+        #
+        # output = model(example_input)
+        #
+        # dot = make_dot(output, params=dict(model.named_parameters()))
+        # dot.format = 'pdf'
+        # dot.render("cnn_classifier_graph")
+        #
+        # writer.add_graph(model, example_input)
+        # writer.close()
     else:
         print('Tensorboard disabled')
         writer = None
@@ -88,7 +125,7 @@ def main(arg, model_select):
                     print(f'Training_acc: {tr_acc}\n')
 
                 # Update the learning rate
-                scheduler.step()
+                # scheduler.step()
 
         print('Training Complete.')
 
@@ -105,11 +142,9 @@ def main(arg, model_select):
         else:
             pass
 
-        save_model = input('Would you like to save the trained model? (y/n)\n')
-        if save_model == 'y':
+        if arg.record:
+            # save_model = input('Would you like to save the trained model? (y/n)\n')
             save_checkpoint(arg, model, optimizer, epoch, save_location)
-        else:
-            pass
 
     else:
         pass
@@ -133,7 +168,13 @@ def save_checkpoint(args, model, optimizer, epoch, save_location):
 
 
 if __name__ == '__main__':
-    torch.manual_seed(42)
+    seed = 42
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     torch.cuda.set_device(0)
     available_models = ['(1) Basic CNN Classifier', '(2) CNN Classifier v2']
     print(f'Available models: {available_models}')
@@ -148,5 +189,4 @@ if __name__ == '__main__':
             if model_version == '2':
                 model_select = 'v2'
                 main(arg, model_select)
-
         print('Please input a valid number!')
