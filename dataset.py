@@ -94,31 +94,7 @@ class EC3D_new(Dataset):
         return np.shape(self.inputs)[0]
 
     def __getitem__(self, idx):
-        if self.rep_3d:
-            return self.batch_ids[idx], self.inputs[idx]
-        else:
-            sample = self.inputs[idx]
-            num_frames, num_joints, _ = sample.shape
-
-            spatial_data = np.zeros((num_frames, num_joints, num_joints))
-            temporal_data = sample
-
-            for frame_idx in range(num_frames):
-                frame_data = sample[frame_idx]
-                spatial_data[frame_idx] = self.compute_pairwise_distances(frame_data)
-
-            return self.batch_ids[idx], spatial_data, temporal_data
-
-        # return self.batch_ids[idx], self.inputs[idx]
-
-    @staticmethod
-    def compute_pairwise_distances(data):
-        num_joints = data.shape[0]
-        pairwise_distances = np.zeros((num_joints, num_joints))
-        for i in range(num_joints):
-            for j in range(num_joints):
-                pairwise_distances[i, j] = np.linalg.norm(data[i] - data[j])
-        return pairwise_distances
+        return self.batch_ids[idx], self.inputs[idx]
 
 
 def normalise(data, normalization):
