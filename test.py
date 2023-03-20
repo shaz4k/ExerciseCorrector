@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from utils.train_utils import get_labels
+from utils.train_utils import get_labels, dtw_loss
+from utils.softdtw import SoftDTW
+
 
 class AccumLoss(object):
     def __init__(self):
@@ -17,7 +19,7 @@ class AccumLoss(object):
         self.avg = self.sum / self.count
 
 
-def test_cnn(test_loader, model, writer, is_cuda=False, level=0):
+def test_cnn(test_loader, model, is_cuda=False, level=0):
     te_l = AccumLoss()
     if level == 0:
         criterion = nn.NLLLoss(weight=torch.tensor([1, 0.5, 1, 0.5, 1, 0.5]))
@@ -29,7 +31,8 @@ def test_cnn(test_loader, model, writer, is_cuda=False, level=0):
     correct = 0
     total = 0
     for i, (batch_id, inputs) in enumerate(test_loader):
-
+        if inputs.shape[1] > 3:
+            inputs = inputs.permute(0, 3, 2, 1)
         if is_cuda:
             inputs = inputs.float().cuda()
         else:
@@ -51,11 +54,9 @@ def test_cnn(test_loader, model, writer, is_cuda=False, level=0):
     # update the training loss
     te_l.update(loss.cpu().data.numpy() * batch_size, batch_size)
     # Log the test accuracy to TensorBoard (if enabled)
-    if writer is not None:
-        test_accuracy = 100 * correct / total
-        writer.add_scalar('Test Accuracy', test_accuracy)
 
     return te_l.avg, 100 * correct / total
+
 
 def test_class(test_loader, model, is_cuda=False, level=0):
     te_l = AccumLoss()
@@ -108,3 +109,38 @@ def test_class(test_loader, model, is_cuda=False, level=0):
             cmt[tl, pl] = cmt[tl, pl] + 1
 
     return te_l.avg, 100 * correct / total, summary, cmt
+
+
+def test_corr(test_loader, model, fact=None, is_cuda=False):
+    test_l = AccumLoss()
+    preds = {'in': [], 'out': [], 'targ': [], 'att': []}
+    criterion = SoftDTW(use_cuda=is_cuda, gamma=0.01)
+    model.eval()
+    for i, (batch_id, inputs) in enumerate(test_loader):
+
+        if is_cuda:
+            inputs = inputs.cuda().float()
+        else:
+            inputs = inputs.float()
+        targets = [test_loader.dataset.targets[int(i)] for i in batch_id]
+        originals = [test_loader.dataset.inputs_raw[int(i)] for i in batch_id]
+        batch_size = inputs.shape[0]
+
+        deltas, att = model(inputs)
+
+        # calculate loss and backward
+        if fact is None:
+            dtw, out, _, _ = dtw_loss(originals, deltas, targets, criterion, is_cuda=is_cuda, test=True)
+            loss = dtw
+        else:
+            dtw, out, _, _ = dtw_loss(originals, deltas, targets, criterion, attentions=att, is_cuda=is_cuda, test=True)
+            l1 = fact * torch.sum(torch.abs(att))
+            loss = (dtw + l1)
+
+        preds['in'] = preds['in'] + originals
+        preds['out'] = preds['out'] + out
+        preds['targ'] = preds['targ'] + targets
+        preds['att'] = preds['att'] + [att[j].detach().cpu().numpy() for j in range(att.shape[0])]
+        test_l.update(loss.cpu().data.numpy(), batch_size)
+
+    return test_l.avg, preds
