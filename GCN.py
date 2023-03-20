@@ -3,6 +3,8 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim import lr_scheduler
+import numpy as np
+import random
 from tqdm import tqdm
 import sys
 import os
@@ -12,6 +14,7 @@ from test import test_class, test_corr
 from dataset import EC3D
 from models import Simple_GCN_Classifier, GCN_Corrector
 from utils.opt import Options
+from utils.train_utils import load_original
 
 """
     Uses GCN Layers for the Classification Task
@@ -19,24 +22,25 @@ from utils.opt import Options
 """
 
 
-def load_dataset():
-    try:
-        print('Loading saved data...')
-        with open(arg.processed_path, "rb") as f:
-            data = pickle.load(f)
-        data_train = data['train']
-        data_test = data['test']
-
-    except FileNotFoundError:
-        print('Processing raw data.')
-        sets = [[0, 1, 2], [], [3]]
-        is_cuda = torch.cuda.is_available()
-        data_train = EC3D(arg.raw_data_path, sets=sets, split=0, is_cuda=is_cuda)
-        data_test = EC3D(arg.raw_data_path, sets=sets, split=2, is_cuda=is_cuda)
-        with open(arg.processed_path, 'wb') as f:
-            pickle.dump({'train': data_train, 'test': data_test}, f)
-
-    return data_train, data_test
+# def load_dataset():
+#     temp_path = 'data/EC3D/tmp_wo_val.pickle'
+#     try:
+#         print('Loading saved data...')
+#         with open(temp_path, "rb") as f:
+#             data = pickle.load(f)
+#         data_train = data['train']
+#         data_test = data['test']
+#
+#     except FileNotFoundError:
+#         print('Processing raw data.')
+#         sets = [[0, 1, 2], [], [3]]
+#         is_cuda = torch.cuda.is_available()
+#         data_train = EC3D(arg.raw_data_path, sets=sets, split=0, is_cuda=is_cuda)
+#         data_test = EC3D(arg.raw_data_path, sets=sets, split=2, is_cuda=is_cuda)
+#         with open(temp_path, 'wb') as f:
+#             pickle.dump({'train': data_train, 'test': data_test}, f)
+#
+#     return data_train, data_test
 
 
 def save_checkpoint(args, model, optimizer, epoch, save_location):
@@ -57,14 +61,8 @@ def save_checkpoint(args, model, optimizer, epoch, save_location):
 def train_classifier(arg):
     save_location = 'runs/GCN-Classifier'
     # Load or process the dataset
-    data_train, data_test = load_dataset()
-
-    # sets = [[0, 1, 2], [], [3]]
-    # is_cuda = torch.cuda.is_available()
-    # data_train = EC3D(arg.raw_data_path, sets=sets, split=0, is_cuda=is_cuda)
-    # data_test = EC3D(arg.raw_data_path, sets=sets, split=2, is_cuda=is_cuda)
-
-    print('Load complete.')
+    # data_train, data_test = load_dataset()
+    data_train, data_test = load_original()
 
     train_loader = DataLoader(dataset=data_train, batch_size=arg.batch_size, shuffle=True, drop_last=True)
     test_loader = DataLoader(dataset=data_test, batch_size=len(data_test))
@@ -96,18 +94,6 @@ def train_classifier(arg):
 
         # Initialise Tensorboard
         writer = SummaryWriter(f'{save_location}/train/{run_id}')
-
-        # Get example data
-        data_iter = iter(train_loader)
-        _, example_input = next(data_iter)
-
-        if is_cuda:
-            example_input = example_input.float().cuda()
-        else:
-            example_input = example_input.float()
-
-        writer.add_graph(model, example_input)
-        writer.close()
 
     else:
         print('Tensorboard disabled')
@@ -147,12 +133,7 @@ def train_classifier(arg):
         else:
             pass
 
-        save_model = input('Would you like to save the trained model? (y/n)\n')
-        if save_model == 'y':
-            save_checkpoint(arg, model, optimizer, epoch, save_location)
-        else:
-            pass
-
+        save_checkpoint(arg, model, optimizer, epoch, save_location)
 
     else:
         print('Aborted training.')
@@ -169,7 +150,7 @@ def train_corrector(arg):
 
     # Load or process the dataset
     print('Loading dataset..')
-    data_train, data_test = load_dataset()
+    data_train, data_test = load_original()
     print('Load complete.')
 
     # Data Loader
@@ -178,8 +159,6 @@ def train_corrector(arg):
 
     # Load model
     model = GCN_Corrector()
-
-    # Load model and move to CUDA device if possible
     if is_cuda:
         model.cuda()
 
@@ -199,18 +178,6 @@ def train_corrector(arg):
 
         writer = SummaryWriter(f'{save_location}/train/{run_id}')
 
-        # Save parameters
-        # save_parameters(arg, save_location)
-        data_iter = iter(train_loader)
-        _, example_input = next(data_iter)
-
-        if is_cuda:
-            example_input = example_input.float().cuda()
-        else:
-            example_input = example_input.float()
-
-        writer.add_graph(model, example_input)
-        writer.close()
     else:
         print('Tensorboard disabled')
         writer = None
@@ -227,22 +194,13 @@ def train_corrector(arg):
                     print(f'\nTraining_loss: {tr_l}')
         print('Training Complete.')
 
-        start_test = input('Do you want to test the GCN corrector? (y/n)\n')
-        if start_test == 'y':
-            print('Start testing...')
-            te_l, preds = test_corr(test_loader, model, is_cuda=is_cuda)
-            print(f'Test Loss: {te_l}')
-            if writer is not None:
-                writer.add_scalar('Corrector/Test Loss', te_l)
-                writer.close()
-        else:
-            pass
-
-        save_model = input('Would you like to save the trained model? (y/n)\n')
-        if save_model == 'y':
+        print('Start testing...')
+        te_l, preds = test_corr(test_loader, model, is_cuda=is_cuda)
+        print(f'Test Loss: {te_l}')
+        if writer is not None:
+            writer.add_scalar('Corrector/Test Loss', te_l)
+            writer.close()
             save_checkpoint(arg, model, optimizer, epoch, save_location)
-        else:
-            pass
 
     else:
         print('Training aborted.')
@@ -257,7 +215,14 @@ def train_class_corr(arg):
 
 
 if __name__ == '__main__':
-    torch.manual_seed(42)
+    seed = 42
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.cuda.set_device(0)
     torch.cuda.set_device(0)
     print('GPU Index: {}'.format(torch.cuda.current_device()))
     available_models = ['(1) GCN Classifier', '(2) GCN Corrector', '(3) Combined GCN Classifier and Corrector']
