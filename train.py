@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
+import numpy as np
 from utils.softdtw import SoftDTW
-from utils.train_utils import get_labels, dtw_loss
+from utils.train_utils import get_labels, dtw_loss, dtw_loss_v2
 
 """
     Training: class AccumLoss, train_class, train_corr, train_transformer, lr_decay
@@ -38,7 +39,8 @@ def train_cnn(train_loader, model, optimizer, is_cuda, writer, epoch, level=0):
     correct = 0
     total = 0
     for i, (batch_id, inputs) in enumerate(train_loader):
-
+        if inputs.shape[1] > 3:
+            inputs = inputs.permute(0, 3, 2, 1)
         if is_cuda:
             inputs = inputs.float().cuda()
         else:
@@ -69,12 +71,12 @@ def train_cnn(train_loader, model, optimizer, is_cuda, writer, epoch, level=0):
         tr_l.update(loss.cpu().item() * batch_size, batch_size)
         # tr_l.update(loss.cpu().data.numpy() * batch_size, batch_size)
 
-        # Log the training loss to TensorBoard every 100 iterations (if enabled)
-        if writer is not None and i % 100 == 0:
+        # Log the training loss to TensorBoard every 10 iterations (if enabled)
+        if writer is not None and i % 10 == 0:
             avg_train_loss = tr_l.avg
-            writer.add_scalar('Training Loss', avg_train_loss, epoch * len(train_loader) + i)
-            avg_train_acc = 100 * correct/total
-            writer.add_scalar('Training Accuracy', avg_train_acc, epoch * len(train_loader) + i)
+            writer.add_scalar('Classifier/Training Loss', avg_train_loss, epoch * len(train_loader) + i)
+            avg_train_acc = 100 * correct / total
+            writer.add_scalar('Classifier/Training Accuracy', avg_train_acc, epoch * len(train_loader) + i)
 
     return tr_l.avg, 100 * correct / total
 
@@ -105,10 +107,12 @@ def train_class(train_loader, model, optimizer, writer, epoch, is_cuda=False, le
             inputs = inputs.float()
 
         labels = get_labels([train_loader.dataset.inputs_label[int(i)] for i in batch_id], level=level).cuda()
-
         batch_size = inputs.size(0)
+
         outputs = model(inputs)
-        _, predicted = torch.max(outputs.data, 1)
+        predicted = torch.argmax(outputs.detach(), dim=1)
+
+        # _, predicted = torch.max(outputs.data, 1)
 
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
@@ -123,17 +127,17 @@ def train_class(train_loader, model, optimizer, writer, epoch, is_cuda=False, le
         # update the training loss
         tr_l.update(loss.cpu().data.numpy() * batch_size, batch_size)
 
-        # Log the training loss to TensorBoard every 100 iterations (if enabled)
-        if writer is not None and i % 100 == 0:
+        # Log the training loss to TensorBoard every 10 iterations (if enabled)
+        if writer is not None and i % 10 == 0:
             avg_train_loss = tr_l.avg
-            writer.add_scalar('Training Loss', avg_train_loss, epoch * len(train_loader) + i)
-            avg_train_acc = 100 * correct/total
-            writer.add_scalar('Training Accuracy', avg_train_acc, epoch * len(train_loader) + i)
+            writer.add_scalar('Classifier/Training Loss', avg_train_loss, epoch * len(train_loader) + i)
+            avg_train_acc = 100 * correct / total
+            writer.add_scalar('Classifier/Training Accuracy', avg_train_acc, epoch * len(train_loader) + i)
 
         return tr_l.avg, 100 * correct / total
 
 
-def train_corr(train_loader, model, optimizer, fact=None, is_cuda=False):
+def train_corr(train_loader, model, optimizer, writer, epoch, fact=None, is_cuda=False):
     tr_l = AccumLoss()
 
     criterion = SoftDTW(use_cuda=is_cuda, gamma=0.01)
@@ -166,56 +170,9 @@ def train_corr(train_loader, model, optimizer, fact=None, is_cuda=False):
         # update the training loss
         tr_l.update(loss.cpu().data.numpy() * batch_size, batch_size)
 
+        # Log the training loss to TensorBoard every 10 iterations (if enabled)
+        if writer is not None and i % 10 == 0:
+            avg_train_loss = tr_l.avg
+            writer.add_scalar('Corrector/Training Loss', avg_train_loss, epoch * len(train_loader) + i)
+
     return tr_l.avg
-
-
-def train_transformer(train_loader, model, optimizer, is_cuda, level=0):
-    tr_l = AccumLoss()
-    if level == 0:
-        # weights determined of loss function based on relative frequency of each class
-        criterion = nn.NLLLoss(weight=torch.tensor([1, 0.3, 1, 0.5, 1, 1]))
-    else:
-        criterion = nn.NLLLoss()
-    model.train()
-
-    correct = 0
-    total = 0
-    for i, (batch_id, inputs) in enumerate(train_loader):
-        # inputs = inputs.float().to(device)
-        # Reshape input into seq_len, batch_size, input_size
-        # inputs = inputs.permute(1, 0, 2)
-        if is_cuda:
-            inputs = inputs.float().cuda()
-        else:
-            inputs = inputs.float()
-
-        labels = get_labels([train_loader.dataset.inputs_label[int(i)] for i in batch_id], level=level).cuda()
-
-        batch_size = inputs.shape[0]
-        outputs = model(inputs)
-        _, predicted = torch.max(outputs.data, 1)
-
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
-        # calculate loss and backward
-        loss = criterion(outputs, labels)
-        optimizer.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
-        optimizer.step()
-
-        # update the training loss
-        tr_l.update(loss.cpu().data.numpy() * batch_size, batch_size)
-
-        return tr_l.avg, 100 * correct / total
-
-
-def lr_decay(optimizer, lr, gamma):
-    """
-    Decay the learning rate of the optimizer by a factor of gamma.
-    """
-    lr *= gamma
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-    return lr
