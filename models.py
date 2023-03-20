@@ -1,11 +1,14 @@
+import math
 import torch
 import torch.nn as nn
 from torch.nn import Linear, Conv2d, BatchNorm1d, BatchNorm2d, MaxPool2d
 import torch.nn.functional as F
+from torch.autograd import Variable
+import random
+import numpy as np
 
 # Custom modules
-from utils.custom_layers import Embedder, PositionalEncoder, Norm, EncoderLayer, DecoderLayer, get_clones
-from utils.custom_layers import GraphConvolution, GC_Block
+from utils.GraphLayers import GraphConvolution, GC_Block
 
 
 # Classification-------------------------------------------------------------------------------------------------------#
@@ -51,13 +54,12 @@ class Simple_GCN_Classifier(nn.Module):
         self.act_flin = nn.LogSoftmax(dim=1)
 
     def forward(self, x):
-
         if len(x.shape) == 3:
             b, n, f = x.shape
         else:
             b = 1
             n, f = x.shape
-
+        # x = [32, 57, 25] --> gcin --> y = [32, 57, 32] --> bn -->[32, 57*32=1824]
         y = self.gcin(x)
         if b > 1:
             y = self.bnin(y.view(b, -1)).view(y.shape)
@@ -92,13 +94,18 @@ class CNN_Classifier(nn.Module):
         self.globalAvgPool = nn.AdaptiveAvgPool2d((1, 1))
         self.dense1 = nn.Linear(128, 64)
         self.dense2 = nn.Linear(64, num_classes)
+        # self.act_f = nn.ReLU()
+        # self.act_f = nn.Tanh()
+        self.act_f = nn.LeakyReLU(negative_slope=0.01)
 
     def forward(self, inputs):
+        # input shape [batch, channels, joints, frames]
         if len(inputs.shape) == 3:
             b, n, f = inputs.shape
             inputs = inputs.view(-1, 1, n, f)
-        x = F.relu(self.conv1(inputs))
-        x = F.relu(self.conv2(x))
+        # change relu to leaky relu
+        x = self.act_f(self.conv1(inputs))
+        x = self.act_f(self.conv2(x))
         x = self.maxPool1(x)
         x = self.batchNorm1(x)
         x = self.conv3(x)
@@ -106,8 +113,8 @@ class CNN_Classifier(nn.Module):
         x = self.batchNorm2(x)
         x = self.globalAvgPool(x)
         x = torch.flatten(x, 1)  # flatten all dimensions except batch
-        x = F.relu(self.dense1(x))
-        x = F.softmax(self.dense2(x), dim=1)
+        x = self.act_f(self.dense1(x))
+        x = F.log_softmax(self.dense2(x), dim=1)
 
         return x
 
@@ -127,22 +134,26 @@ class CNN_Classifier_v2(nn.Module):
         self.globalAvgPool = nn.AdaptiveAvgPool2d((1, 1))
         self.dense1 = nn.Linear(256, 128)
         self.dense2 = nn.Linear(128, num_classes)
+
+        # self.act_f = nn.ReLU()
+        self.act_f = nn.LeakyReLU(negative_slope=0.01)
+
     def forward(self, inputs):
         if len(inputs.shape) == 3:
             b, n, f = inputs.shape
             inputs = inputs.view(-1, 1, n, f)
-        x = F.relu(self.conv1(inputs))
-        x = F.relu(self.conv2(x))
+        x = self.act_f(self.conv1(inputs))
+        x = self.act_f(self.conv2(x))
         x = self.maxPool(x)
         x = self.batchNorm1(x)
-        x = F.relu(self.conv3(x))
-        x = F.relu(self.conv4(x))
+        x = self.act_f(self.conv3(x))
+        x = self.act_f(self.conv4(x))
         x = self.maxPool(x)
         x = self.batchNorm2(x)
         x = self.globalAvgPool(x)
         x = torch.flatten(x, 1)
-        x = F.relu(self.dense1(x))
-        x = F.softmax(self.dense2(x), dim=1)
+        x = self.act_f(self.dense1(x))
+        x = F.log_softmax(self.dense2(x), dim=1)
         return x
 
 
@@ -180,9 +191,9 @@ class GCN_Corrector(nn.Module):
         y = self.gcin(x)
         if len(y.shape) == 3:
             b, n, f = y.shape
-        else:
-            b = 1
-            n, f = y.shape
+        # else:
+        #     b = 1
+        #     n, f = y.shape
 
         y = self.bn1(y.view(b, -1)).view(b, n, f)
         y = self.act_f(y)
@@ -198,85 +209,4 @@ class GCN_Corrector(nn.Module):
 
         return out, att
 
-
-# Simple PyTorch Transformer ------------------------------------------------------------------------------------------#
-class Simple_Transformer(nn.Module):
-    def __init__(self, input_dim=25, hidden_dim=512, num_layers=6, num_heads=8, dropout_prob=0.1, num_classes=12):
-        super(Simple_Transformer, self).__init__()
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-        self.num_layers = num_layers
-        self.num_heads = num_heads
-        self.dropout_prob = dropout_prob
-        self.num_classes = num_classes
-
-        self.embedding = nn.Linear(input_dim, hidden_dim)
-
-        encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_dim, nhead=num_heads, dim_feedforward=2048,
-                                                   dropout=dropout_prob)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers)
-
-        self.output = nn.Linear(hidden_dim, num_classes)
-
-    def forward(self, x):
-        embedded = self.embedding(x)
-        embedded = embedded.permute(1, 0, 2)
-        encoded = self.transformer_encoder(embedded)
-        pooled = encoded.mean(dim=0)
-        logits = self.output(pooled)
-
-        return logits
-
-
-# Custom Transformer, Encoder and Decoder -----------------------------------------------------------------------------#
-class Transformer(nn.Module):
-    def __init__(self, src_vocab, trg_vocab, d_model, N, heads):
-        super().__init__()
-        self.encoder = Encoder(src_vocab, d_model, N, heads)
-        self.decoder = Decoder(trg_vocab, d_model, N, heads)
-        self.out = nn.Linear(d_model, trg_vocab)
-
-    def forward(self, src, trg, src_mask, trg_mask):
-        e_outputs = self.encoder(src, src_mask)
-        d_outputs = self.decoder(trg, e_outputs, src_mask, trg_mask)
-        output = self.out(d_outputs)
-        return output
-
-
-class Encoder(nn.Module):
-    def __init__(self, vocab_size, d_model, N, heads):
-        super().__init__()
-        self.N = N
-        self.embed = Embedder(vocab_size, d_model)
-        self.pe = PositionalEncoder
-        self.layers = get_clones(EncoderLayer(d_model, heads), N)
-        self.norm = Norm(d_model)
-
-    def forward(self, src, mask):
-        x = self.embed(src)
-        x = self.pe(x)
-        for i in range(self.N):
-            x = self.layers[i](x, mask)
-
-        return self.norm(x)
-
-
-class Decoder(nn.Module):
-    def __init__(self, vocab_size, d_model, N, heads):
-        super().__init__()
-        self.N = N
-        self.embed = Embedder(vocab_size, d_model)
-        self.pe = PositionalEncoder
-        self.layers = get_clones(DecoderLayer(d_model, heads), N)
-        self.norm = Norm(d_model)
-
-    def forward(self, trg, e_outputs, src_mask, trg_mask):
-        x = self.embed(trg)
-        x = self.pe(x)
-        for i in range(self.N):
-            x = self.layers[i](x, e_outputs, src_mask, trg_mask)
-        return self.norm(x)
-
-
-if __name__ == '__main__':
-    model = Simple_GCN_Classifier()
+# Graph Attention Correction
