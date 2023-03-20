@@ -15,7 +15,7 @@ from test import test_cnn
 
 
 def load_dataset():
-    temp_path = 'data/EC3D/tmp_DCT_3CH.pickle'
+    temp_path = 'data/EC3D/tmp_DCT.pickle'
     try:
         print('Loading saved data.')
         with open(temp_path, "rb") as f:
@@ -110,7 +110,7 @@ def main(arg):
                     print(f'Training_acc: {tr_acc}\n')
 
                 # Update the learning rate
-                scheduler.step()
+                # scheduler.step()
 
         print('Training Complete.')
         start_test = input('Would you like to test the trained model? (y/n)\n')
@@ -127,13 +127,7 @@ def main(arg):
         else:
             pass
 
-        save_model = input('Would you like to save the trained model? (y/n)\n')
-
-        if save_model == 'y':
-            save_checkpoint(arg, model, optimizer, epoch, save_location)
-        else:
-            pass
-
+        save_checkpoint(arg, model, optimizer, epoch, save_location)
 
     else:
         sys.exit()
