@@ -1,5 +1,0 @@
-Learning rate: 0.01
-Batch size: 32
-Number of epochs: 50
-Step size: 10
-Gamma: 0.2
