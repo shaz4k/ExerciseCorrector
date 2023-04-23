@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <module type="PYTHON_MODULE" version="4">
   <component name="NewModuleRootManager">
+<<<<<<< HEAD
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/img" />
       <excludeFolder url="file://$MODULE_DIR$/data/NTU60" />
     </content>
+=======
+    <content url="file://$MODULE_DIR$" />
+>>>>>>> f238fe1f2a22017a4d883cc4f78aaedc5b5dfb62
     <orderEntry type="jdk" jdkName="Python 3.8 (pytorch_env)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
