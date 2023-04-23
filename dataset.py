@@ -223,3 +223,4 @@ def dtw_pairs(correct, incorrect, is_cuda=False):
         dtw = pd.DataFrame.from_dict(dtw_sub, orient='index').idxmin(axis=1)
         pairs = pairs + list(zip(dtw.index, dtw))
     return pairs
+
