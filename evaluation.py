@@ -9,23 +9,26 @@ from sklearn.metrics import confusion_matrix
 import seaborn as sns
 import matplotlib.pyplot as plt
 from utils.train_utils import get_labels
-from models import CNN_Classifier, GCN_Corrector
-import torch.optim as optim
-from utils.softdtw import SoftDTW
-from utils.train_utils import dtw_loss
+from models import CNN_Classifier, GCN_Corrector, GCN_Corrector_Attention
+from sklearn.metrics import accuracy_score
 from visualisation import SkeletonVisualizer
-from utils.data_utils import idct_2d
 import matplotlib.pyplot as plt
+from utils.train_utils import load_DCT
+
+labels_dict = {0: ('SQUAT', 'Correct'), 1: ('SQUAT', 'Feets too wide'), 2: ('SQUAT', 'Knees inward'),
+               3: ('SQUAT', 'Not low enough'), 4: ('SQUAT', 'Front bended'),
+               6: ('Lunges', 'Correct'), 7: ('Lunges', 'Not low enough'), 8: ('Lunges', 'Knees pass toes'),
+               9: ('Plank', 'Correct'), 10: ('Plank', 'Arched back'), 11: ('Plank', 'Rolled back')}
+# correct = 0, 6, 9
 
 
-def load_checkpoint(model, optimizer, checkpoint_path):
+def load_checkpoint(model, checkpoint_path):
     checkpoint = torch.load(checkpoint_path)
     model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    epoch = checkpoint['epoch']
     args = checkpoint['args']
+    results = checkpoint['results']
 
-    return model, optimizer, epoch, args
+    return model, args, results
 
 
 def class_eval(path):
@@ -41,20 +44,20 @@ def class_eval(path):
 
     test_loader = DataLoader(dataset=data_test, batch_size=len(data_test))
     model = CNN_Classifier(in_channels=3)
-    optimizer = optim.Adam(model.parameters())
     is_cuda = torch.cuda.is_available()
     if is_cuda:
         model.cuda()
 
     # load weights
     # path = 'runs/3D-CNN-Classifier/checkpoints/2023-03-17_01-24-56_epoch39.pt'
-    model, optimizer, epoch, args = load_checkpoint(model, optimizer, path)
+    model, args, results = load_checkpoint(model, path)
     # Set the model to evaluation mode
     model.eval()
 
     y_true = []
     y_pred = []
-    classes = range(11)
+    # classes = range(11)
+    classes = [val for key, val in labels_dict.items()]
 
     for i, (batch_id, inputs) in enumerate(test_loader):
         if inputs.shape[1] > 3:
@@ -71,132 +74,152 @@ def class_eval(path):
         y_true.extend(labels.tolist())
         y_pred.extend(predicted.tolist())
 
+    acc = accuracy_score(y_true, y_pred)
+
+    print(f'Accuracy Score: {acc * 100} %')
     cm = confusion_matrix(y_true, y_pred)
-    plt.figure(figsize=(10, 10))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='YlGnBu', xticklabels=classes, yticklabels=classes)
+    plt.figure(figsize=(12, 12))
+    sns.set(font_scale=1.2)
+    sns.heatmap(cm, annot=True, fmt='d', cmap='YlGnBu', xticklabels=classes, yticklabels=classes,
+                annot_kws={"size": 14}, cbar=False, square=True, linewidths=0.5)
     plt.xlabel('Predicted')
     plt.ylabel('True')
     plt.show()
 
-def visualise_weights(path):
-    temp_path = 'data/EC3D/tmp_3d.pickle'
-    try:
-        print('Loading saved data.')
-        with open(temp_path, "rb") as f:
-            data = pickle.load(f)
-        data_test = data['test']
-    except FileNotFoundError:
-        print('File Not Found')
-        sys.exit()
 
-    test_loader = DataLoader(dataset=data_test, batch_size=len(data_test))
-    model = CNN_Classifier(in_channels=3)
-    optimizer = optim.Adam(model.parameters())
+def cnn_checker(class_path, corr_path, corr_model):
+    data_train, data_test = load_DCT()
+    # temp_path = 'data/EC3D/tmp_wo_val.pickle'
+    # temp_path = 'data/EC3D/tmp_DCT_1CH.pickle'
+    # try:
+    #     print('Loading saved data.')
+    #     with open(temp_path, "rb") as f:
+    #         data = pickle.load(f)
+    #     data_test = data['test']
+    # except FileNotFoundError:
+    #     print('File Not Found')
+    class_model = CNN_Classifier(in_channels=3)
     is_cuda = torch.cuda.is_available()
     if is_cuda:
-        model.cuda()
+        class_model.cuda()
 
-    # load weights
-    # path = 'runs/3D-CNN-Classifier/checkpoints/2023-03-17_01-24-56_epoch39.pt'
-    model, optimizer, epoch, args = load_checkpoint(model, optimizer, path)
-    # Set the model to evaluation mode
-    model.eval()
+    test_loader = DataLoader(dataset=data_test, batch_size=len(data_test), shuffle=False)
 
-    conv1_weights = model.conv2.weight.cpu().detach().numpy()
-    # Normalize the weights for better visualization
-    min_val, max_val = conv1_weights.min(), conv1_weights.max()
-    conv1_weights_normalized = (conv1_weights - min_val) / (max_val - min_val)
-    num_filters, num_input_channels = conv1_weights_normalized.shape[:2]
+    # Load CNN
+    class_model, _, _ = load_checkpoint(class_model, class_path)
+    class_model.eval()
 
-    # Plot the filters
-    for i in range(num_filters):
-        for j in range(num_input_channels):
-            plt.subplot(num_filters, num_input_channels, i * num_input_channels + j + 1)
-            plt.imshow(conv1_weights_normalized[i, j], cmap='gray')
-            plt.axis('off')
+    # Load GCN results
+    # corr_model = GCN_Corrector()
+    # corr_model = Simple_GCN_Attention()
+    _, _, results = load_checkpoint(corr_model, corr_path)
+
+    inputs = results['in']
+    preds = results['out']
+    targets = results['targ']
+    gt_labels = results['labels']
+
+    # Reshape into [frames, joints, 3] then normalise and Resample
+    inputs = [sample.T.reshape(-1, 19, 3) for sample in inputs]
+    preds = [sample.T.reshape(-1, 19, 3) for sample in preds]
+
+    # Convert preds to tensor
+    input_preds = process_data(preds, target_frames=24, normalization='sample')
+    input_preds = process_data(preds, target_frames=24, normalization='sample')
+    input_preds = [torch.from_numpy(pred) for pred in input_preds]
+    input_preds = torch.stack(input_preds, dim=0)
+    input_preds = torch.permute(input_preds, (0, 3, 2, 1))
+
+    if is_cuda:
+        input_preds = input_preds.float().cuda()
+    else:
+        input_preds = input_preds.float()
+
+    # Forward
+    outputs = class_model(input_preds)
+    _, predicted = torch.max(outputs.data, 1)
+
+    # Normalise data for viz
+    # inputs = inputs.
+    gt_labels = np.array(gt_labels)
+    predicted = predicted.cpu().detach().numpy()
+
+    # Visualise output pred and labels
+    show_plots = input('Do you want to show plots? (y/n)\n')
+    if show_plots == 'y':
+        for i, pred in enumerate(preds):
+            input_label = labels_dict[gt_labels[i]]
+            pred_label = labels_dict[predicted[i]]
+            model_in = inputs[i]
+            viz = SkeletonVisualizer(num_frames=pred.shape[0], data1=model_in, data2=pred, add_labels=True, translate_to_joint=18,
+                                     text=f'Input Label: {gt_labels[i]} - {input_label}\n'
+                                          f'Correction Label: {predicted[i]} - {pred_label}')
+            viz.plot_still(20)
+            # viz.show()
+
+    # Calculate Accuracy
+    correct_lab = ([0, 6, 9])
+    total_incorrect = 0
+    corrected = 0
+    for gt, pred in zip(gt_labels, predicted):
+        if gt not in correct_lab:
+            total_incorrect += 1
+            if pred in correct_lab:
+                corrected += 1
+
+    # Calculate the percentage of corrected labels
+    percentage_corrected = round((corrected / total_incorrect) * 100)
+
+    print(f"Percentage of corrected labels: {percentage_corrected}%")
+
+    # Total Correct
+    correct = 0
+    for pred in predicted:
+        if pred in correct_lab:
+            correct += 1
+    total = len(gt_labels)
+    corrected = round((correct/total) * 100)
+
+    print(f'Total percentage correct: {corrected}%')
+
+    classes = [val for key, val in labels_dict.items()]
+
+    cm = confusion_matrix(predicted, gt_labels)
+    plt.figure(figsize=(12, 12))
+    sns.set(font_scale=1.2)
+    sns.heatmap(cm, annot=True, fmt='d', cmap='YlGnBu', xticklabels=classes, yticklabels=classes,
+                annot_kws={"size": 14}, cbar=False, square=True, linewidths=0.5)
+    plt.xlabel('Input Label')
+    plt.ylabel('Corrected Label')
     plt.show()
 
 
-def gcn_corr_eval(path):
-    temp_path = 'data/EC3D/tmp_wo_val.pickle'
-    try:
-        print('Loading saved data.')
-        with open(temp_path, "rb") as f:
-            data = pickle.load(f)
-        data_test = data['test']
-    except FileNotFoundError:
-        print('File Not Found')
-        sys.exit()
 
-    test_loader = DataLoader(dataset=data_test, batch_size=len(data_test))
-    model = GCN_Corrector()
-    is_cuda = torch.cuda.is_available()
-    if is_cuda:
-        model.cuda()
-    optimizer = optim.Adam(model.parameters())
+def process_data(data, target_frames=None, normalization=None):
+    processed_list = []
 
-    model, optimizer, epoch, args = load_checkpoint(model, optimizer, path)
-    model.eval()
-    criterion = SoftDTW(use_cuda=is_cuda, gamma=0.01)
-    model.eval()
-    with torch.no_grad():
-        for i, (batch_id, inputs) in enumerate(test_loader):
-            # inputs = DCT
-            if is_cuda:
-                inputs = inputs.cuda().float()
-            else:
-                inputs = inputs.float()
-            # target = 3D position
-            targets = [test_loader.dataset.targets[int(i)] for i in batch_id]
-            # inputs_raw = 3D position
-            inputs_raw = [test_loader.dataset.inputs_raw[int(i)] for i in batch_id]
-            batch_size = inputs.shape[0]
-            deltas, att = model(inputs)
-            outputs = inputs + deltas
-            out = []
-            for i, sample in enumerate(inputs_raw):
-                num_frames = sample.shape[1]
-                org_raw = torch.from_numpy(sample).T * 3000
-                targ_raw = torch.from_numpy(targets[i]).T * 3000
-                if num_frames > outputs[i].shape[1]:
-                    m = torch.nn.ZeroPad2d((0, num_frames - deltas[i].shape[1], 0, 0))
-                    outputs_raw = idct_2d(m(outputs[i].cpu()).T.unsqueeze(0))[0]
-                else:
-                    outputs_raw = idct_2d(outputs[i, :, :num_frames].cpu().T.unsqueeze(0))[0]
-                out.append(outputs_raw)
+    if normalization == 'dataset':
+        max_val = np.max([np.max(sample) for sample in data])
+        min_val = np.min([np.min(sample) for sample in data])
 
-        raw_inputs = [sample.reshape(3, 19, -1).T for sample in inputs_raw]
+    for sample in data:
+        if normalization == 'sample':
+            max_val = np.max(sample)
+            min_val = np.min(sample)
 
+        if normalization in ['dataset', 'sample']:
+            sample = (2.0 * (sample - min_val) / (max_val - min_val)) - 1.0
 
-        # Plot specific still image
-        for i, seq_in in enumerate(raw_inputs):
-            label = data_test.inputs_label[i]
-            num_frames = seq_in.shape[0]
-            if label[2] == 2:
-                print(label)
-                seq_corr = out[i].numpy().T.reshape(3, 19, num_frames).transpose(2, 1, 0)
-                viz = SkeletonVisualizer(num_frames, seq_in, seq_corr)
-                viz.plot_still(25)
-
-        # Plot all as animation
-        for i, sample in enumerate(raw_inputs):
-            print(data_test.inputs_label[i])
+        if target_frames:
             num_frames = sample.shape[0]
-            data2 = out[i].numpy().T.reshape(3, 19, num_frames).transpose(2, 1, 0)
-            viz = SkeletonVisualizer(num_frames, sample, data2)
-            viz.show()
-            plt.show()
-            plt.close()
+            if num_frames > target_frames:
+                step_size = num_frames // target_frames
+                sample = sample[range(0, num_frames, step_size)][:target_frames]
 
+        processed_list.append(sample)
 
-        # for i, sample in enumerate(out):
-        #     num_frames = sample.shape[0]
-        #     data1 = inputs_raw[i].transpose().reshape(num_frames, 19, 3)
-        #     sample = sample.cpu().numpy()
-        #     data2 = sample.reshape(num_frames, 19, 3)
-        #     viz = SkeletonVisualizer(num_frames, data1, data2, normalised=False)
-        #     viz.show()
-# ('SQUAT', 'Vidit', 2, 1, 'gt')
+    return processed_list
+
 
 if __name__ == '__main__':
     seed = 42
@@ -206,9 +229,32 @@ if __name__ == '__main__':
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    available_eval = ['(1) Classifier', '(2) Correction']
-    # class_dir = 'runs/3D-CNN-Classifier/checkpoints/2023-03-17_01-24-56_epoch39.pt'
-    # class_eval(class_dir)
-    gcn_dir = 'runs/GCN_Corrector/checkpoints/2023-03-17_22-19-17_epoch149.pt'
-    gcn_corr_eval(gcn_dir)
-    # visualise_weights(class_dir)
+    available_eval = ['(1) Classifier', '(2) Original GCN Corrector', '(3) Improved GCN Corrector', '(4) GCN with Attention']
+    cnn_dir = 'runs/3D-CNN-Classifier/checkpoints/2023-04-08_19-15-09.pt'
+    gcn_dir = 'runs/GCN_Corrector/checkpoints/2023-04-10_22-41-08.pt'
+    gcn_attn_dir = 'runs/GCN_Corrector_Attn/checkpoints/2023-04-17_16-50-07.pt'
+    # gcn_corr_eval(gcn_dir)
+    # visualise_weights(cnn_dir)
+    while True:
+        select = int(input(f'Please enter number for the evaluation you want to perform\n{available_eval}'))
+        if select == 1:
+            class_eval(cnn_dir)
+        if select == 2:
+            pass
+        if select == 3:
+            corr_model = GCN_Corrector()
+            gcn_dir = 'runs/GCN_Corrector/checkpoints/2023-04-19_22-53-58.pt'
+            # gcn_dir = 'runs/GCN_Corrector/checkpoints/2023-04-17_17-11-08.pt'
+            cnn_checker(cnn_dir, gcn_dir, corr_model)
+            sys.exit()
+        if select == 4:
+            corr_model = GCN_Corrector_Attention()
+            gcn_attn_dir = 'runs/GCN_Corrector_Attn/checkpoints/2023-04-19_21-46-55.pt'
+            cnn_checker(cnn_dir, gcn_attn_dir, corr_model)
+            sys.exit()
+        else:
+            print('Please input valid number!')
+
+
+
+
