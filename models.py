@@ -6,9 +6,12 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import random
 import numpy as np
+from torch.nn import MultiheadAttention
+import torch.nn.init as init
 
 # Custom modules
-from utils.GraphLayers import GraphConvolution, GC_Block
+from utils.GraphLayers import GraphConvolution, GC_Block, GC_BlockV2
+
 
 
 # Classification-------------------------------------------------------------------------------------------------------#
@@ -19,23 +22,6 @@ class Simple_GCN_Classifier(nn.Module):
     This class defines a simple graph convolutional neural network for classification tasks.
     It consists of two graph convolutional layers, batch normalization layers, a linear layer,
     and a dropout layer. The activation function is ReLU, and the final layer uses LogSoftmax.
-
-    Args:
-        input_feature (int): Number of input features.
-        hidden_feature (int): Number of hidden features.
-        p_dropout (float): Dropout probability.
-        node_n (int): Number of nodes in the graph.
-        classes (int): Number of classes for classification.
-
-    Attributes:
-        gcin (GraphConvolution): The first graph convolutional layer.
-        gcout (GraphConvolution): The second graph convolutional layer.
-        bnin (BatchNorm1d): Batch normalization layer for the input features.
-        bnout (BatchNorm1d): Batch normalization layer for the output features.
-        lin (Linear): Linear layer for classification.
-        do (Dropout): Dropout layer.
-        act_f (ReLU): ReLU activation function.
-        act_flin (LogSoftmax): LogSoftmax activation function.
 
     """
 
@@ -80,6 +66,14 @@ class Simple_GCN_Classifier(nn.Module):
 
 
 class CNN_Classifier(nn.Module):
+    """
+        CNN Classifier:
+            inputs (tensor): shape (batch_size, channels, joints, frames)
+            outputs (tensor): shape (batch_size, classes)
+
+        Attributes:
+            Conv2D Layers, Max Pooling, Batch Normalisation, Global Average Pooling, Dense layers, Leaky ReLU
+    """
     def __init__(self, in_channels, num_classes=12):
         super(CNN_Classifier, self).__init__()
         self.conv1 = Conv2d(in_channels=in_channels, out_channels=32, kernel_size=2, padding=1)
@@ -162,11 +156,16 @@ class GCN_Corrector(nn.Module):
     # Separated Corrector
     def __init__(self, input_feature=25, hidden_feature=256, p_dropout=0.5, num_stage=2, node_n=57):
         """
-        :param input_feature: num of input feature
-        :param hidden_feature: num of hidden feature
-        :param p_dropout: drop out prob.
-        :param num_stage: number of residual blocks (Mao = 12 blocks)
-        :param node_n: number of nodes in graph
+        Args:
+            :param input_feature: num of input feature
+            :param hidden_feature: num of hidden feature
+            :param p_dropout: drop out prob.
+            :param num_stage: number of residual blocks
+            :param node_n: number of nodes in graph
+            :return out: residuals
+
+        Attributes:
+            Graph Convolution, GC_Block, ReLU
         """
         super(GCN_Corrector, self).__init__()
         self.num_stage = num_stage
@@ -191,9 +190,9 @@ class GCN_Corrector(nn.Module):
         y = self.gcin(x)
         if len(y.shape) == 3:
             b, n, f = y.shape
-        # else:
-        #     b = 1
-        #     n, f = y.shape
+        else:
+            b = 1
+            n, f = y.shape
 
         y = self.bn1(y.view(b, -1)).view(b, n, f)
         y = self.act_f(y)
@@ -209,4 +208,68 @@ class GCN_Corrector(nn.Module):
 
         return out, att
 
-# Graph Attention Correction
+
+class GCN_Corrector_Attention(nn.Module):
+    # Separated Corrector
+    def __init__(self, input_feature=25, hidden_feature=256, p_dropout=0.5, num_stage=2, num_heads=2, node_n=57):
+        """
+        :param input_feature: num of input feature
+        :param hidden_feature: num of hidden feature
+        :param p_dropout: drop out prob.
+        :param num_stage: number of residual blocks
+        :param node_n: number of nodes in graph
+        :return out: residuals
+        """
+        super(GCN_Corrector_Attention, self).__init__()
+        self.num_stage = num_stage
+
+        self.gcin = GraphConvolution(input_feature, hidden_feature, node_n=node_n)
+        self.bn1 = nn.BatchNorm1d(node_n * hidden_feature)
+        self.ln1 = nn.LayerNorm(hidden_feature)
+
+        self.gcbs = []
+        for i in range(num_stage):
+            self.gcbs.append(GC_BlockV2(hidden_feature, p_dropout=p_dropout, node_n=node_n))
+
+        self.gcbs = nn.ModuleList(self.gcbs)
+
+        # Add the attention layer
+        self.attention = MultiheadAttention(embed_dim=hidden_feature, num_heads=num_heads, dropout=0.,
+                                            batch_first=True)
+
+        self.linear = nn.Linear(hidden_feature, input_feature)
+
+        self.gcout = GraphConvolution(hidden_feature, input_feature, node_n=node_n)
+
+        self.do = nn.Dropout(p_dropout)
+        self.act_f = nn.ReLU()
+        self.act_fatt = nn.GELU()
+        # self.act_fatt = nn.LeakyReLU(negative_slope=0.1)
+
+        stdv = 1. / torch.sqrt(torch.tensor(self.attention.embed_dim, dtype=torch.float32))
+        self.attention.in_proj_weight.data.uniform_(-stdv, stdv)
+        self.attention.out_proj.weight.data.uniform_(-stdv, stdv)
+
+    def forward(self, x):
+        y = self.gcin(x)
+        if len(y.shape) == 3:
+            b, n, f = y.shape
+        else:
+            b = 1
+            n, f = y.shape
+
+        y = self.bn1(y.view(b, -1)).view(b, n, f)
+        y = self.act_f(y)
+        y = self.do(y)
+
+        for i in range(self.num_stage):
+            y = self.gcbs[i](y)
+
+        # Attention Layer
+        attn_output, _ = self.attention(y, y, y)
+        att = self.linear(attn_output)
+        att = self.act_fatt(att)
+
+        out = self.gcout(y)
+
+        return out + att
