@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from utils.softdtw import SoftDTW
-from utils.train_utils import get_labels, dtw_loss, dtw_loss_v2
+from utils.train_utils import get_labels, dtw_loss
 import random
 
 seed = 42

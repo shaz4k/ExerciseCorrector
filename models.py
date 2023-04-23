@@ -236,8 +236,11 @@ class GCN_Corrector_Attention(nn.Module):
         # Add the attention layer
         self.attention = MultiheadAttention(embed_dim=hidden_feature, num_heads=num_heads, dropout=0.,
                                             batch_first=True)
+        self.attention2 = MultiheadAttention(embed_dim=hidden_feature, num_heads=num_heads, dropout=0.,
+                                            batch_first=True)
 
         self.linear = nn.Linear(hidden_feature, input_feature)
+        self.linear2 = nn.Linear(hidden_feature, hidden_feature)
 
         self.gcout = GraphConvolution(hidden_feature, input_feature, node_n=node_n)
 
