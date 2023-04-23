@@ -35,12 +35,13 @@ class GraphConvolution(nn.Module):
 
     """
 
-    def __init__(self, in_features, out_features, bias=True, node_n=57):
+    def __init__(self, in_features, out_features, bias=True, node_n=57, return_adj=None):
         super(GraphConvolution, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.weight = Parameter(torch.FloatTensor(in_features, out_features))
         self.adj = Parameter(torch.FloatTensor(node_n, node_n))
+        self.return_adj = return_adj
         if bias:
             self.bias = Parameter(torch.FloatTensor(out_features))
         else:
@@ -75,8 +76,16 @@ class GraphConvolution(nn.Module):
         """
         support = torch.matmul(input, self.weight)
         output = torch.matmul(self.adj, support)
+        # if self.bias is not None:
+        #     return output + self.bias
+        # else:
+        #     return output
         if self.bias is not None:
-            return output + self.bias
+            output = output + self.bias
+
+        if self.return_adj:
+            adj = self.adj
+            return output, adj
         else:
             return output
 
@@ -158,6 +167,40 @@ class GC_Block(nn.Module):
 
         y = self.gc2(y)
         y = self.bn2(y.view(b, -1)).view(b, n, f)
+        y = self.act_f(y)
+        y = self.do(y)
+
+        return y + x
+
+    def __repr__(self):
+        return self.__class__.__name__ + ' (' \
+               + str(self.in_features) + ' -> ' \
+               + str(self.out_features) + ')'
+
+
+class GC_BlockV2(nn.Module):
+    def __init__(self, in_features, p_dropout, bias=True, node_n=57):
+        super(GC_BlockV2, self).__init__()
+        self.in_features = in_features
+        self.out_features = in_features
+
+        self.gc1 = GraphConvolution(in_features, in_features, node_n=node_n, bias=bias)
+        self.ln1 = nn.LayerNorm(in_features)
+
+        self.gc2 = GraphConvolution(in_features, in_features, node_n=node_n, bias=bias)
+        self.ln2 = nn.LayerNorm(in_features)
+
+        self.do = nn.Dropout(p_dropout)
+        self.act_f = nn.ReLU()
+
+    def forward(self, x):
+        y = self.gc1(x)
+        y = self.ln1(y)
+        y = self.act_f(y)
+        y = self.do(y)
+
+        y = self.gc2(y)
+        y = self.ln2(y)
         y = self.act_f(y)
         y = self.do(y)
 
