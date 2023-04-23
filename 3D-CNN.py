@@ -15,6 +15,7 @@ from utils.opt import Options
 from models import CNN_Classifier, CNN_Classifier_v2
 from train import train_cnn
 from test import test_cnn
+from utils.train_utils import load_3d
 
 
 def load_dataset():
@@ -61,11 +62,7 @@ def main(arg, model_select):
 
     # Load raw data
     data_train, data_test = load_dataset()
-    # print('Processing raw data...')
-    # sets = [[0, 1, 2], [], [3]]
-    # data_train = EC3D_new(arg.raw_data_path, sets=sets, split=0, rep_3d=True, normalization='sample', is_cuda=is_cuda)
-    # data_test = EC3D_new(arg.raw_data_path, sets=sets, split=2, rep_3d=True, normalization='sample', is_cuda=is_cuda)
-    # print('Load complete.')
+    # data_train, data_test = load_3d()
 
     # Data Loader
     train_loader = DataLoader(dataset=data_train, batch_size=arg.batch_size, shuffle=True, drop_last=True)
@@ -90,79 +87,42 @@ def main(arg, model_select):
 
         writer = SummaryWriter(f'{save_location}/train/{run_id}')
 
-        # Get example data
-        # data_iter = iter(train_loader)
-        # _, example_input = next(data_iter)
-
-        # if is_cuda:
-        #     example_input = example_input.permute(0, 3, 2, 1)
-        #     example_input = example_input.float().cuda()
-        # else:
-        #     example_input = example_input.permute(0, 3, 2, 1)
-        #     example_input = example_input.float()
-        #
-        # output = model(example_input)
-        #
-        # dot = make_dot(output, params=dict(model.named_parameters()))
-        # dot.format = 'pdf'
-        # dot.render("cnn_classifier_graph")
-        #
-        # writer.add_graph(model, example_input)
-        # writer.close()
     else:
         print('Tensorboard disabled')
         writer = None
 
-    # Ready to input into a CNN
-    start_train = input('Would you like to start training the model? (y/n)\n')
-    if start_train == 'y':
+    # Train model
+    with tqdm(range(arg.epoch), desc=f'Training model', unit="epoch") as tepoch:
+        for epoch in tepoch:
+            tr_l, tr_acc = train_cnn(train_loader, model, optimizer, is_cuda, writer, epoch, level=1)
+            if (epoch + 1) % 10 == 0:
+                print(f'\nTraining_loss: {tr_l}')
+                print(f'Training_acc: {tr_acc}\n')
 
-        with tqdm(range(arg.epoch), desc=f'Training model', unit="epoch") as tepoch:
-            for epoch in tepoch:
-                tr_l, tr_acc = train_cnn(train_loader, model, optimizer, is_cuda, writer, epoch, level=1)
-                if (epoch + 1) % 10 == 0:
-                    print(f'\nTraining_loss: {tr_l}')
-                    print(f'Training_acc: {tr_acc}\n')
+    # Test model
+    print('Starting testing...')
+    with torch.no_grad():
+        te_l, te_acc, preds = test_cnn(test_loader, model, is_cuda=is_cuda, level=1)
+    print(f'Test Loss: {te_l}\nTest Accuracy:{te_acc}')
+    if writer is not None:
+        writer.add_scalar('Classifier/Test Loss', te_l)
+        writer.add_scalar('Classifier/Test Accuracy', te_acc)
+        writer.close()
+        save_checkpoint(arg, model, save_location, preds)
 
-                # Update the learning rate
-                # scheduler.step()
-
-        print('Training Complete.')
-
-        start_test = input('Start testing? (y/n)\n')
-        if start_test == 'y':
-            with torch.no_grad():
-                te_l, te_acc = test_cnn(test_loader, model, is_cuda=is_cuda, level=1)
-            print(f'Test Loss: {te_l}\nTest Accuracy:{te_acc}')
-
-            if writer is not None:
-                writer.add_scalar('Classifier/Test Loss', te_l)
-                writer.add_scalar('Classifier/Test Accuracy', te_acc)
-                writer.close()
-        else:
-            pass
-
-        if arg.record:
-            # save_model = input('Would you like to save the trained model? (y/n)\n')
-            save_checkpoint(arg, model, optimizer, epoch, save_location)
-
-    else:
-        pass
-    print('End.')
     sys.exit()
 
 
-def save_checkpoint(args, model, optimizer, epoch, save_location):
+def save_checkpoint(args, model, save_location, preds=None):
     checkpoint_dir = f'{save_location}/checkpoints'
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
 
-    checkpoint_path = f'{checkpoint_dir}/{args.datetime}_epoch{epoch}.pt'
+    checkpoint_path = f'{checkpoint_dir}/{args.datetime}.pt'
     checkpoint = {
         'args': args,
         'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'epoch': epoch,
+        'results': preds
     }
     torch.save(checkpoint, checkpoint_path)
 
