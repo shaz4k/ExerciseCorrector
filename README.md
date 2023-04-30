@@ -11,6 +11,7 @@ Exercise is necessary for well-being and physical health, however, improper exer
 <p float="left">
     <img src="results/12.gif" width="90%"/>
 </p>
+
 ## Models
 ### Error Classification
 <p float="left">
