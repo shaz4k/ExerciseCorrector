@@ -33,6 +33,7 @@ class SkeletonVisualizer:
         self.ax = self.fig.add_subplot(111, projection='3d')
         self.fig.subplots_adjust(top=1.0, bottom=0.2, left=0.125, right=0.9, hspace=0.2, wspace=0.2)
 
+
     def update(self, frame):
         self.ax.clear()
         color_data1 = self.colors['data1']
@@ -79,7 +80,9 @@ class SkeletonVisualizer:
             self.ax.set_yticklabels([])
             self.ax.set_zticklabels([])
 
-        self.ax.view_init(elev=20, azim=50)
+        # self.ax.view_init(elev=20, azim=50)
+        self.ax.set_axis_off()
+        self.fig.patch.set_visible(False)
 
     def add_joint_labels(self, data):
         for i in range(data.shape[0]):
@@ -93,7 +96,7 @@ class SkeletonVisualizer:
 
     def show(self, save_filename=None):
         ani = FuncAnimation(self.fig, self.update, frames=self.num_frames, interval=100)
-        self.fig.text(0.05, 0.05, s=self.text, fontsize=10, color='black')
+        self.fig.text(0.5, 0.35, s=self.text, fontsize=12, color='black', ha='center')
         if save_filename:
             ani.save(save_filename, writer='ffmpeg')
         else:
@@ -101,7 +104,7 @@ class SkeletonVisualizer:
 
     def plot_still(self, frame, save_filename=None):
         self.update(frame)
-        self.fig.text(0.05, 0.05, s=self.text, fontsize=12, color='black')
+        self.fig.text(0.5, 0.35, s=self.text, fontsize=12, color='black', ha='center')
         if save_filename:
             plt.savefig(save_filename)
         else:
