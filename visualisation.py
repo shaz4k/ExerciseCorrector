@@ -80,7 +80,7 @@ class SkeletonVisualizer:
             self.ax.set_yticklabels([])
             self.ax.set_zticklabels([])
 
-        # self.ax.view_init(elev=20, azim=50)
+        self.ax.view_init(elev=20, azim=50)
         self.ax.set_axis_off()
         self.fig.patch.set_visible(False)
 

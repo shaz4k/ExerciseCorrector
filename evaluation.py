@@ -282,16 +282,18 @@ def cnn_checker(class_path, corr_path, corr_model):
             input_label = labels_dict[gt_labels[i]]
             pred_label = labels_dict[predicted[i]]
             model_in = inputs[i]
-            viz = SkeletonVisualizer(num_frames=pred.shape[0], data1=model_in, data2=pred, add_labels=True,
-                                     translate_to_joint=None,
-                                     text=f'Input Label: {gt_labels[i]} - {input_label}\n'
-                                          f'Output Label: {predicted[i]} - {pred_label}')
+            if input_label != pred_label:
+                viz = SkeletonVisualizer(num_frames=pred.shape[0], data1=model_in, data2=pred, add_labels=True,
+                                         translate_to_joint=None,
+                                         text=f'Input Label: {gt_labels[i]} - {input_label}\n'
+                                              f'Output Label: {predicted[i]} - {pred_label}')
             # if input_label[0] == 'Lunges':
             #     viz.plot_still(50)
             # else:
             #     viz.plot_still(20)
             # plt.close()
-            viz.show()
+                viz.show(save_filename=f'results/{i}.gif')
+                plt.close()
 
     # Calculate Accuracy
     correct_lab = ([0, 6, 9])
