@@ -1,0 +1,95 @@
+absl-py @ file:///C:/b/abs_5babsu7y5x/croot/absl-py_1666362945682/work
+aiohttp @ file:///C:/b/abs_c4zmy2l696/croot/aiohttp_1670009573673/work
+aiosignal @ file:///tmp/build/80754af9/aiosignal_1637843061372/work
+async-timeout @ file:///C:/b/abs_43ozhz2a8g/croots/recipe/async-timeout_1664876362767/work
+attrs @ file:///C:/b/abs_09s3y775ra/croot/attrs_1668696195628/work
+blinker==1.4
+Bottleneck @ file:///C:/Windows/Temp/abs_3198ca53-903d-42fd-87b4-03e6d03a8381yfwsuve8/croots/recipe/bottleneck_1657175565403/work
+brotlipy==0.7.0
+cachetools @ file:///tmp/build/80754af9/cachetools_1619597386817/work
+certifi @ file:///C:/b/abs_85o_6fm0se/croot/certifi_1671487778835/work/certifi
+cffi @ file:///C:/b/abs_49n3v2hyhr/croot/cffi_1670423218144/work
+charset-normalizer @ file:///tmp/build/80754af9/charset-normalizer_1630003229654/work
+click @ file:///C:/ci/click_1646056799533/work
+colorama @ file:///C:/b/abs_a9ozq0l032/croot/colorama_1672387194846/work
+contourpy @ file:///C:/b/abs_d5rpy288vc/croots/recipe/contourpy_1663827418189/work
+cryptography @ file:///C:/b/abs_8ecplyc3n2/croot/cryptography_1677533105000/work
+cycler @ file:///tmp/build/80754af9/cycler_1637851556182/work
+decorator==4.4.2
+fonttools==4.25.0
+frozenlist @ file:///C:/b/abs_2bb5uzghsi/croot/frozenlist_1670004511812/work
+google-auth @ file:///opt/conda/conda-bld/google-auth_1646735974934/work
+google-auth-oauthlib @ file:///tmp/build/80754af9/google-auth-oauthlib_1617120569401/work
+graphviz==0.20.1
+grpcio @ file:///C:/b/abs_ccut8qek12/croot/grpc-suite_1681912611694/work
+h5py @ file:///C:/ci/h5py_1659071640187/work
+idna @ file:///C:/b/abs_bdhbebrioa/croot/idna_1666125572046/work
+imageio==2.25.0
+imageio-ffmpeg==0.4.8
+importlib-metadata @ file:///C:/b/abs_20ndzb2j6v/croot/importlib-metadata_1678997085534/work
+Jinja2==3.1.2
+joblib==1.2.0
+kiwisolver @ file:///C:/b/abs_88mdhvtahm/croot/kiwisolver_1672387921783/work
+llvmlite==0.39.1
+Markdown @ file:///C:/b/abs_98lv_ucina/croot/markdown_1671541919225/work
+MarkupSafe==2.1.2
+matplotlib @ file:///C:/b/abs_03z_dj2gty/croot/matplotlib-suite_1670466145509/work
+mkl-fft==1.3.1
+mkl-random @ file:///C:/ci/mkl_random_1626186184278/work
+mkl-service==2.4.0
+moviepy==1.0.3
+multidict @ file:///C:/b/abs_6cx_8w3cv2/croot/multidict_1665674238352/work
+munkres==1.1.4
+numba @ file:///C:/b/abs_e53pp2e4k7/croot/numba_1670258349527/work
+numexpr @ file:///C:/b/abs_a7kbak88hk/croot/numexpr_1668713882979/work
+numpy @ file:///C:/b/abs_datssh7cer/croot/numpy_and_numpy_base_1672336199388/work
+oauthlib @ file:///C:/b/abs_44riqpe5gg/croot/oauthlib_1679489644705/work
+packaging @ file:///C:/b/abs_ed_kb9w6g4/croot/packaging_1678965418855/work
+pandas @ file:///C:/b/abs_c6fuezktfm/croot/pandas_1670425103552/work
+Pillow==9.4.0
+ply==3.11
+proglog==0.1.10
+protobuf==3.20.3
+psutil==5.9.4
+pyasn1 @ file:///Users/ktietz/demo/mc3/conda-bld/pyasn1_1629708007385/work
+pyasn1-modules==0.2.8
+pycparser @ file:///tmp/build/80754af9/pycparser_1636541352034/work
+PyJWT @ file:///C:/ci/pyjwt_1657529430378/work
+pyOpenSSL @ file:///C:/b/abs_552w85x1jz/croot/pyopenssl_1677607703691/work
+pyparsing @ file:///C:/Users/BUILDE~1/AppData/Local/Temp/abs_7f_7lba6rl/croots/recipe/pyparsing_1661452540662/work
+PyQt5==5.15.7
+PyQt5-sip @ file:///C:/Windows/Temp/abs_d7gmd2jg8i/croots/recipe/pyqt-split_1659273064801/work/pyqt_sip
+PySocks @ file:///C:/ci/pysocks_1605287845585/work
+python-dateutil @ file:///tmp/build/80754af9/python-dateutil_1626374649649/work
+pytz @ file:///C:/b/abs_22fofvpn1x/croot/pytz_1671698059864/work
+requests @ file:///C:/b/abs_41owkd5ymz/croot/requests_1682607524657/work
+requests-oauthlib==1.3.0
+rsa @ file:///tmp/build/80754af9/rsa_1614366226499/work
+scikit-learn==1.2.1
+scipy==1.10.0
+seaborn @ file:///C:/b/abs_68ltdkoyoo/croot/seaborn_1673479199997/work
+sip @ file:///C:/Windows/Temp/abs_b8fxd17m2u/croots/recipe/sip_1659012372737/work
+six @ file:///tmp/build/80754af9/six_1644875935023/work
+tabulate @ file:///C:/ci/tabulate_1657618996805/work
+tensorboard @ file:///C:/Users/builder/adipietro/mc3/tf210/conda-bld/tensorboard_1669760968711/work/tensorboard-2.10.0-py3-none-any.whl
+tensorboard-data-server @ file:///C:/b/abs_2fhvpo862s/croot/tensorboard-data-server_1670853600144/work/tensorboard_data_server-0.6.1-py3-none-any.whl
+tensorboard-plugin-wit @ file:///C:/tf/b/tensorboard-plugin-wit_1660162132996/work/tensorboard_plugin_wit-1.8.1-py3-none-any.whl
+threadpoolctl==3.1.0
+toml @ file:///tmp/build/80754af9/toml_1616166611790/work
+torch==1.13.1
+torch-cluster==1.6.0+pt113cu117
+torch-geometric==2.2.0
+torch-scatter==2.1.0+pt113cu117
+torch-sparse==0.6.16+pt113cu117
+torch-spline-conv==1.2.1+pt113cu117
+torchaudio==0.13.1
+torchvision==0.14.1
+torchviz==0.0.2
+tornado @ file:///C:/ci/tornado_1662476991259/work
+tqdm==4.64.1
+typing_extensions @ file:///C:/b/abs_a1bb332wcs/croot/typing_extensions_1681939523095/work
+urllib3 @ file:///C:/b/abs_3ce53vrdcr/croot/urllib3_1680254693505/work
+Werkzeug @ file:///C:/b/abs_8578rs2ra_/croot/werkzeug_1679489759009/work
+win-inet-pton @ file:///C:/ci/win_inet_pton_1605306167264/work
+yarl @ file:///C:/Users/BUILDE~1/AppData/Local/Temp/abs_e5nlunspj6/croots/recipe/yarl_1661437086516/work
+zipp @ file:///C:/b/abs_b9jfdr908q/croot/zipp_1672387552360/work
